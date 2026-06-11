@@ -1,0 +1,18 @@
+# 代码所有者配置
+# 当有人提交 PR 时，GitHub 会自动请求这些所有者进行审查
+
+# 默认所有者
+* @Yaemikoreal
+
+# Rust 后端
+src-tauri/ @Yaemikoreal
+
+# 前端代码
+src/ @Yaemikoreal
+
+# 文档
+*.md @Yaemikoreal
+docs/ @Yaemikoreal
+
+# GitHub 配置
+.github/ @Yaemikoreal
