@@ -154,7 +154,7 @@ impl PomodoroTimer {
         }
 
         // 切换到下一阶段
-        self.next_mode(&mut state);
+        Self::next_mode(&mut state);
 
         let state_clone = state.clone();
         let _ = self.app_handle.emit("timer-tick", &state_clone);
@@ -185,7 +185,7 @@ impl PomodoroTimer {
     }
 
     /// 切换到下一阶段
-    fn next_mode(&self, state: &mut TimerState) {
+    pub fn next_mode(state: &mut TimerState) {
         state.mode = match state.mode {
             TimerMode::Focus => {
                 if state.completed_pomodoros % 4 == 0 {
@@ -203,5 +203,96 @@ impl PomodoroTimer {
             TimerMode::LongBreak => 15 * 60,
         };
         state.remaining = state.duration;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_state() {
+        let state = TimerState::default();
+        assert_eq!(state.mode, TimerMode::Focus);
+        assert_eq!(state.duration, 25 * 60);
+        assert_eq!(state.remaining, 25 * 60);
+        assert!(!state.is_running);
+        assert_eq!(state.completed_pomodoros, 0);
+    }
+
+    #[test]
+    fn test_next_mode_focus_to_short_break() {
+        let mut state = TimerState {
+            mode: TimerMode::Focus,
+            completed_pomodoros: 1,
+            ..Default::default()
+        };
+        PomodoroTimer::next_mode(&mut state);
+        assert_eq!(state.mode, TimerMode::ShortBreak);
+        assert_eq!(state.duration, 5 * 60);
+        assert_eq!(state.remaining, 5 * 60);
+    }
+
+    #[test]
+    fn test_next_mode_focus_to_long_break() {
+        let mut state = TimerState {
+            mode: TimerMode::Focus,
+            completed_pomodoros: 4,
+            ..Default::default()
+        };
+        PomodoroTimer::next_mode(&mut state);
+        assert_eq!(state.mode, TimerMode::LongBreak);
+        assert_eq!(state.duration, 15 * 60);
+        assert_eq!(state.remaining, 15 * 60);
+    }
+
+    #[test]
+    fn test_next_mode_focus_to_long_break_multiple_of_4() {
+        let mut state = TimerState {
+            mode: TimerMode::Focus,
+            completed_pomodoros: 8,
+            ..Default::default()
+        };
+        PomodoroTimer::next_mode(&mut state);
+        assert_eq!(state.mode, TimerMode::LongBreak);
+    }
+
+    #[test]
+    fn test_next_mode_short_break_to_focus() {
+        let mut state = TimerState {
+            mode: TimerMode::ShortBreak,
+            ..Default::default()
+        };
+        PomodoroTimer::next_mode(&mut state);
+        assert_eq!(state.mode, TimerMode::Focus);
+        assert_eq!(state.duration, 25 * 60);
+    }
+
+    #[test]
+    fn test_next_mode_long_break_to_focus() {
+        let mut state = TimerState {
+            mode: TimerMode::LongBreak,
+            ..Default::default()
+        };
+        PomodoroTimer::next_mode(&mut state);
+        assert_eq!(state.mode, TimerMode::Focus);
+    }
+
+    #[test]
+    fn test_set_mode_durations() {
+        let test_cases = vec![
+            (TimerMode::Focus, 25 * 60),
+            (TimerMode::ShortBreak, 5 * 60),
+            (TimerMode::LongBreak, 15 * 60),
+        ];
+
+        for (mode, expected_duration) in test_cases {
+            let mut state = TimerState::default();
+            state.mode = mode;
+            state.duration = expected_duration;
+            state.remaining = expected_duration;
+            assert_eq!(state.duration, expected_duration);
+            assert_eq!(state.remaining, expected_duration);
+        }
     }
 }

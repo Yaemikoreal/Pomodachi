@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  RUST_BACKTRACE: 1
+
+jobs:
+  test-and-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Rust tests
+        working-directory: src-tauri
+        run: cargo test
+
+      - name: Run frontend tests
+        run: pnpm test
+
+      - name: Build Tauri app
+        run: pnpm tauri build
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: toumato-installer
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: warn
+
+  create-release:
+    needs: [test-and-build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: toumato-installer
+          path: artifacts
+
+      - name: Generate release notes
+        run: |
+          echo "# 番茄宠物 Toumato ${{ github.ref_name }}" > ${{ github.workspace }}-RELEASE_NOTES.md
+          echo "" >> ${{ github.workspace }}-RELEASE_NOTES.md
+          echo "基于 Tauri v2 的本地优先 AI 番茄钟桌面宠物/个人助理。" >> ${{ github.workspace }}-RELEASE_NOTES.md
+          echo "" >> ${{ github.workspace }}-RELEASE_NOTES.md
+          echo "## 安装" >> ${{ github.workspace }}-RELEASE_NOTES.md
+          echo "下载对应架构的安装包并运行即可。" >> ${{ github.workspace }}-RELEASE_NOTES.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: ${{ github.workspace }}-RELEASE_NOTES.md
+          files: |
+            artifacts/*.exe
+            artifacts/*.msi
+          draft: false
+          prerelease: false

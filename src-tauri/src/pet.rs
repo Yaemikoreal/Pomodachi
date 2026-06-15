@@ -103,3 +103,76 @@ impl PetManager {
         *mood = PetMood::Thinking.to_string();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_default_mood() {
+        let pet = PetManager::new();
+        assert_eq!(pet.get_mood().await, "happy");
+    }
+
+    #[tokio::test]
+    async fn test_default_skin() {
+        let pet = PetManager::new();
+        assert_eq!(pet.get_skin_id().await, "firefly");
+    }
+
+    #[tokio::test]
+    async fn test_new_with_skin() {
+        let pet = PetManager::new_with_skin("cat2");
+        assert_eq!(pet.get_skin_id().await, "cat2");
+    }
+
+    #[tokio::test]
+    async fn test_on_focus_start() {
+        let pet = PetManager::new();
+        pet.on_focus_start().await;
+        assert_eq!(pet.get_mood().await, "focused");
+    }
+
+    #[tokio::test]
+    async fn test_on_rest() {
+        let pet = PetManager::new();
+        pet.on_rest().await;
+        assert_eq!(pet.get_mood().await, "sleeping");
+    }
+
+    #[tokio::test]
+    async fn test_on_focus_complete() {
+        let pet = PetManager::new();
+        pet.on_focus_start().await;
+        pet.on_focus_complete().await;
+        assert_eq!(pet.get_mood().await, "happy");
+    }
+
+    #[tokio::test]
+    async fn test_on_chat_start() {
+        let pet = PetManager::new();
+        pet.on_chat_start().await;
+        assert_eq!(pet.get_mood().await, "listening");
+    }
+
+    #[tokio::test]
+    async fn test_on_ai_thinking() {
+        let pet = PetManager::new();
+        pet.on_ai_thinking().await;
+        assert_eq!(pet.get_mood().await, "thinking");
+    }
+
+    #[tokio::test]
+    async fn test_set_mood_custom() {
+        let pet = PetManager::new();
+        pet.set_mood("tired").await;
+        assert_eq!(pet.get_mood().await, "tired");
+    }
+
+    #[tokio::test]
+    async fn test_set_skin_id() {
+        let pet = PetManager::new();
+        pet.set_skin_id("new_skin").await;
+        assert_eq!(pet.get_skin_id().await, "new_skin");
+    }
+}

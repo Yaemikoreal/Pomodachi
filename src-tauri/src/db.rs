@@ -126,6 +126,17 @@ impl Database {
         Ok(db)
     }
 
+    /// 创建内存数据库（仅用于测试）
+    #[cfg(test)]
+    pub fn new_in_memory() -> Result<Self> {
+        let conn = Connection::open_in_memory()?;
+        let db = Database {
+            conn: Mutex::new(conn),
+        };
+        db.init_tables()?;
+        Ok(db)
+    }
+
     /// 获取数据库路径
     fn get_db_path(app_handle: &AppHandle) -> Result<PathBuf> {
         let app_data_dir = app_handle
@@ -138,99 +149,101 @@ impl Database {
 
     /// 初始化表结构
     fn init_tables(&self) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        // 第一段：创建表（单独作用域以释放锁）
+        {
+            let conn = self.conn.lock().unwrap();
+            conn.execute_batch(
+                "
+                -- 简化版宠物表（无游戏数值）
+                CREATE TABLE IF NOT EXISTS pet (
+                    id INTEGER PRIMARY KEY DEFAULT 1,
+                    name TEXT NOT NULL DEFAULT '番茄猫',
+                    mood TEXT NOT NULL DEFAULT 'happy',
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
 
-        conn.execute_batch(
-            "
-            -- 简化版宠物表（无游戏数值）
-            CREATE TABLE IF NOT EXISTS pet (
-                id INTEGER PRIMARY KEY DEFAULT 1,
-                name TEXT NOT NULL DEFAULT '番茄猫',
-                mood TEXT NOT NULL DEFAULT 'happy',
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
+                -- 专注记录
+                CREATE TABLE IF NOT EXISTS pomodoro_record (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    started_at TEXT NOT NULL,
+                    finished_at TEXT,
+                    duration INTEGER NOT NULL,
+                    completed BOOLEAN NOT NULL DEFAULT 0,
+                    distraction_count INTEGER NOT NULL DEFAULT 0
+                );
 
-            -- 专注记录
-            CREATE TABLE IF NOT EXISTS pomodoro_record (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                started_at TEXT NOT NULL,
-                finished_at TEXT,
-                duration INTEGER NOT NULL,
-                completed BOOLEAN NOT NULL DEFAULT 0,
-                distraction_count INTEGER NOT NULL DEFAULT 0
-            );
+                -- 进程黑名单
+                CREATE TABLE IF NOT EXISTS blocklist (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    process_name TEXT NOT NULL UNIQUE,
+                    added_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
 
-            -- 进程黑名单
-            CREATE TABLE IF NOT EXISTS blocklist (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                process_name TEXT NOT NULL UNIQUE,
-                added_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
+                -- 聊天消息
+                CREATE TABLE IF NOT EXISTS chat_message (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
 
-            -- 聊天消息
-            CREATE TABLE IF NOT EXISTS chat_message (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                role TEXT NOT NULL,
-                content TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
+                -- AI 配置
+                CREATE TABLE IF NOT EXISTS ai_config (
+                    id INTEGER PRIMARY KEY DEFAULT 1,
+                    max_turns INTEGER NOT NULL DEFAULT 3,
+                    max_budget_usd REAL DEFAULT 0.1,
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
 
-            -- AI 配置
-            CREATE TABLE IF NOT EXISTS ai_config (
-                id INTEGER PRIMARY KEY DEFAULT 1,
-                max_turns INTEGER NOT NULL DEFAULT 3,
-                max_budget_usd REAL DEFAULT 0.1,
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
+                -- 任务表（待办事项）
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    completed INTEGER NOT NULL DEFAULT 0,
+                    priority INTEGER NOT NULL DEFAULT 0,
+                    due_date TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
 
-            -- 任务表（待办事项）
-            CREATE TABLE IF NOT EXISTS tasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                completed INTEGER NOT NULL DEFAULT 0,
-                priority INTEGER NOT NULL DEFAULT 0,
-                due_date TEXT,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
+                -- 应用设置表（key-value）
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
 
-            -- 应用设置表（key-value）
-            CREATE TABLE IF NOT EXISTS app_settings (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL,
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
+                -- 成就表
+                CREATE TABLE IF NOT EXISTS achievements (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    key TEXT NOT NULL UNIQUE,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    unlocked_at TEXT,
+                    icon TEXT NOT NULL DEFAULT '🏆'
+                );
 
-            -- 成就表
-            CREATE TABLE IF NOT EXISTS achievements (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                key TEXT NOT NULL UNIQUE,
-                name TEXT NOT NULL,
-                description TEXT NOT NULL,
-                unlocked_at TEXT,
-                icon TEXT NOT NULL DEFAULT '🏆'
-            );
+                -- 专注统计表（单行累计）
+                CREATE TABLE IF NOT EXISTS focus_stats (
+                    id INTEGER PRIMARY KEY DEFAULT 1,
+                    total_pomodoros INTEGER NOT NULL DEFAULT 0,
+                    total_focus_seconds INTEGER NOT NULL DEFAULT 0,
+                    current_streak INTEGER NOT NULL DEFAULT 0,
+                    longest_streak INTEGER NOT NULL DEFAULT 0,
+                    last_focus_date TEXT
+                );
 
-            -- 专注统计表（单行累计）
-            CREATE TABLE IF NOT EXISTS focus_stats (
-                id INTEGER PRIMARY KEY DEFAULT 1,
-                total_pomodoros INTEGER NOT NULL DEFAULT 0,
-                total_focus_seconds INTEGER NOT NULL DEFAULT 0,
-                current_streak INTEGER NOT NULL DEFAULT 0,
-                longest_streak INTEGER NOT NULL DEFAULT 0,
-                last_focus_date TEXT
-            );
+                -- 初始化宠物数据和 AI 配置（如果不存在）
+                INSERT OR IGNORE INTO pet (id, name, mood) VALUES (1, '番茄猫', 'happy');
+                INSERT OR IGNORE INTO ai_config (id) VALUES (1);
+                ",
+            )?;
+        } // conn 在此释放，锁被释放
 
-            -- 初始化宠物数据和 AI 配置（如果不存在）
-            INSERT OR IGNORE INTO pet (id, name, mood) VALUES (1, '番茄猫', 'happy');
-            INSERT OR IGNORE INTO ai_config (id) VALUES (1);
-            ",
-        )?;
-
-        // 运行数据库迁移
+        // 运行数据库迁移（获取自己的锁）
         self.run_migrations()?;
 
-        // 初始化默认成就
+        // 初始化默认成就（获取自己的锁）
         self.init_default_achievements()?;
 
         Ok(())
@@ -848,5 +861,232 @@ impl Database {
         }
 
         Ok(new_achievements)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_db() -> Database {
+        Database::new_in_memory().expect("创建内存数据库失败")
+    }
+
+    #[test]
+    fn test_init_tables_creates_default_pet() {
+        let db = create_test_db();
+        let pet = db.get_pet_status().unwrap();
+        assert_eq!(pet.name, "番茄猫");
+        assert_eq!(pet.mood, "happy");
+        assert_eq!(pet.id, 1);
+    }
+
+    #[test]
+    fn test_pomodoro_crud() {
+        let db = create_test_db();
+        let id = db.add_pomodoro_record(25 * 60).unwrap();
+        assert!(id > 0);
+
+        // 完成记录
+        db.complete_pomodoro_record(id, 2).unwrap();
+
+        // 查询历史
+        let history = db.get_pomodoro_history(10).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].id, id);
+        assert!(history[0].completed);
+        assert_eq!(history[0].distraction_count, 2);
+    }
+
+    #[test]
+    fn test_today_pomodoro_count() {
+        let db = create_test_db();
+        assert_eq!(db.get_today_pomodoro_count().unwrap(), 0);
+
+        db.add_pomodoro_record(25 * 60).unwrap();
+        // 刚添加未完成的记录不计入（因为 completed = 0）
+        assert_eq!(db.get_today_pomodoro_count().unwrap(), 0);
+
+        let last_id = db.add_pomodoro_record(25 * 60).unwrap();
+        db.complete_pomodoro_record(last_id, 0).unwrap();
+        // completed = true 的记录会计入
+        assert_eq!(db.get_today_pomodoro_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_blocklist_crud() {
+        let db = create_test_db();
+        let list = db.get_blocklist().unwrap();
+        assert!(list.is_empty());
+
+        db.add_to_blocklist("chrome.exe").unwrap();
+        db.add_to_blocklist("wechat.exe").unwrap();
+
+        let list = db.get_blocklist().unwrap();
+        assert_eq!(list.len(), 2);
+
+        // 重复添加不报错
+        db.add_to_blocklist("chrome.exe").unwrap();
+        let list = db.get_blocklist().unwrap();
+        assert_eq!(list.len(), 2);
+
+        // 移除
+        db.remove_from_blocklist("chrome.exe").unwrap();
+        let list = db.get_blocklist().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].process_name, "wechat.exe");
+    }
+
+    #[test]
+    fn test_chat_message_crud() {
+        let db = create_test_db();
+        let history = db.get_chat_history(10).unwrap();
+        assert!(history.is_empty());
+
+        db.add_chat_message("user", "你好").unwrap();
+        db.add_chat_message("assistant", "喵~").unwrap();
+
+        let history = db.get_chat_history(10).unwrap();
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].role, "user");
+        assert_eq!(history[0].content, "你好");
+        assert_eq!(history[1].role, "assistant");
+        assert_eq!(history[1].content, "喵~");
+
+        // 清空
+        db.clear_chat_history().unwrap();
+        let history = db.get_chat_history(10).unwrap();
+        assert!(history.is_empty());
+    }
+
+    #[test]
+    fn test_task_crud() {
+        let db = create_test_db();
+        let tasks = db.get_tasks().unwrap();
+        assert!(tasks.is_empty());
+
+        // 添加
+        let id = db.add_task("测试任务", 1, Some("2026-12-31")).unwrap();
+        assert!(id > 0);
+
+        let tasks = db.get_tasks().unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].title, "测试任务");
+        assert_eq!(tasks[0].priority, 1);
+
+        // 切换完成
+        db.complete_task(id, true).unwrap();
+        let tasks = db.get_tasks().unwrap();
+        assert!(tasks[0].completed);
+
+        // 删除
+        db.delete_task(id).unwrap();
+        let tasks = db.get_tasks().unwrap();
+        assert!(tasks.is_empty());
+    }
+
+    #[test]
+    fn test_settings_crud() {
+        let db = create_test_db();
+
+        // 不存在的键返回 None
+        assert!(db.get_setting("nonexistent").unwrap().is_none());
+
+        db.set_setting("language", "zh").unwrap();
+        assert_eq!(db.get_setting("language").unwrap().unwrap(), "zh");
+
+        // 覆盖
+        db.set_setting("language", "en").unwrap();
+        assert_eq!(db.get_setting("language").unwrap().unwrap(), "en");
+    }
+
+    #[test]
+    fn test_ai_config_default() {
+        let db = create_test_db();
+        let config = db.get_ai_config().unwrap();
+        assert_eq!(config.max_turns, 3);
+        assert_eq!(config.max_budget_usd, Some(0.1));
+    }
+
+    #[test]
+    fn test_skin_id() {
+        let db = create_test_db();
+        // 默认值
+        let skin = db.get_skin_id().unwrap();
+        assert_eq!(skin, "firefly");
+
+        db.set_skin_id("cat2").unwrap();
+        let skin = db.get_skin_id().unwrap();
+        assert_eq!(skin, "cat2");
+    }
+
+    #[test]
+    fn test_focus_stats_initial() {
+        let db = create_test_db();
+        let stats = db.get_focus_stats().unwrap();
+        assert_eq!(stats.total_pomodoros, 0);
+        assert_eq!(stats.total_focus_seconds, 0);
+        assert_eq!(stats.current_streak, 0);
+        assert_eq!(stats.longest_streak, 0);
+    }
+
+    #[test]
+    fn test_focus_stats_update() {
+        let db = create_test_db();
+        let stats = db.update_focus_stats(25 * 60).unwrap();
+        assert_eq!(stats.total_pomodoros, 1);
+        assert_eq!(stats.total_focus_seconds, 25 * 60);
+        assert_eq!(stats.current_streak, 1);
+        assert_eq!(stats.longest_streak, 1);
+    }
+
+    #[test]
+    fn test_achievements_init() {
+        let db = create_test_db();
+        let achievements = db.get_achievements().unwrap();
+        assert_eq!(achievements.len(), 9);
+        // 全部未解锁
+        assert!(achievements.iter().all(|a| a.unlocked_at.is_none()));
+    }
+
+    #[test]
+    fn test_check_achievements_first_pomodoro() {
+        let db = create_test_db();
+        let stats = FocusStats {
+            total_pomodoros: 1,
+            total_focus_seconds: 1500,
+            current_streak: 1,
+            longest_streak: 1,
+            last_focus_date: None,
+        };
+        let new = db.check_achievements(&stats).unwrap();
+        assert!(!new.is_empty());
+        assert!(new.iter().any(|a| a.key == "first_pomodoro"));
+    }
+
+    #[test]
+    fn test_check_achievements_no_duplicate() {
+        let db = create_test_db();
+        let stats = FocusStats {
+            total_pomodoros: 1,
+            total_focus_seconds: 1500,
+            current_streak: 1,
+            longest_streak: 1,
+            last_focus_date: None,
+        };
+        // 第一次应该解锁
+        let first = db.check_achievements(&stats).unwrap();
+        assert_eq!(first.len(), 1);
+        // 第二次不应该再次解锁
+        let second = db.check_achievements(&stats).unwrap();
+        assert!(second.is_empty());
+    }
+
+    #[test]
+    fn test_get_focus_stats_persistence() {
+        let db = create_test_db();
+        // 首次获取时自动创建
+        let stats = db.get_focus_stats().unwrap();
+        assert_eq!(stats.total_pomodoros, 0);
     }
 }

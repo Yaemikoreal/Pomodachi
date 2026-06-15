@@ -193,3 +193,10 @@ impl ProcessMonitor {
         *self.is_monitoring.lock().await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    // 进程监听器需要 Tauri AppHandle 才能构造，
+    // 核心逻辑（黑名单匹配、冷却机制）通过 db.rs 和 lib.rs 集成测试覆盖。
+    // 当前跳过独立单元测试，后续引入 mock runtime 后补充。
+}
