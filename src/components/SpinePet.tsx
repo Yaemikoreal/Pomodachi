@@ -23,21 +23,26 @@ const BODY_IDLE = 'Move_Sit_Idle'
 const PADDING = 30
 /** 最小窗口尺寸 */
 const MIN_WIN = 200
+/** 皮肤切换淡出时间（ms） */
+const FADE_DURATION = 200
 
 interface SpinePetProps {
   onPetClick?: () => void;
+  skinId?: string;
 }
 
 /**
  * Spine 桌宠渲染组件
- * 渲染后自动裁剪窗口到角色大小，支持拖动和缩放
+ * 渲染后自动裁剪窗口到角色大小，支持拖动、缩放和多皮肤切换
  */
-export function SpinePet({ onPetClick }: SpinePetProps) {
+export function SpinePet({ onPetClick, skinId = 'firefly' }: SpinePetProps) {
   const { mood } = usePet()
   const containerRef = useRef<HTMLDivElement>(null)
   const appRef = useRef<PIXI.Application | null>(null)
   const spineRef = useRef<Spine | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const prevSkinRef = useRef(skinId)
 
   /** 将窗口裁剪到贴合精灵 */
   const fitWindowToSpine = useCallback(async (spine: Spine) => {
@@ -87,13 +92,28 @@ export function SpinePet({ onPetClick }: SpinePetProps) {
     }
   }, [])
 
-  /** 初始化 PixiJS + Spine */
+  /** 销毁 PIXI 应用并清理 */
+  const destroyApp = useCallback(() => {
+    if (appRef.current) {
+      appRef.current.destroy(true, { children: true, texture: true, baseTexture: true })
+      appRef.current = null
+      spineRef.current = null
+    }
+    if (containerRef.current) {
+      containerRef.current.innerHTML = ''
+    }
+  }, [])
+
+  /** 初始化或切换皮肤时重新创建 PIXI + Spine */
   useEffect(() => {
     if (!containerRef.current) return
     let destroyed = false
     const container = containerRef.current
 
     const init = async () => {
+      setIsLoading(true)
+      destroyApp()
+
       try {
         const app = new PIXI.Application({
           width: MIN_WIN,
@@ -110,23 +130,25 @@ export function SpinePet({ onPetClick }: SpinePetProps) {
         container.appendChild(app.view as HTMLCanvasElement)
         appRef.current = app
 
-        // 加载 Spine 资源
+        // 动态加载皮肤资产
+        const basePath = `/spines/${skinId}`
+
         const [atlasResponse, textureResponse] = await Promise.all([
-          fetch('/spines/firefly/atlases_0_atlas_0'),
+          fetch(`${basePath}/atlases_0_atlas_0`),
           new Promise<HTMLImageElement>((resolve, reject) => {
             const img = new Image()
             img.onload = () => resolve(img)
             img.onerror = reject
-            img.src = '/spines/firefly/atlases_0_textures_0_0.png'
+            img.src = `${basePath}/atlases_0_textures_0_0.png`
           }),
         ])
 
         if (destroyed || !app.stage) { app.destroy(true); return }
-        if (!atlasResponse.ok) throw new Error('Failed to load atlas')
+        if (!atlasResponse.ok) throw new Error(`加载图集失败: ${atlasResponse.status}`)
         const atlasText = await atlasResponse.text()
 
-        const skeletonResponse = await fetch('/spines/firefly/skeleton_0')
-        if (!skeletonResponse.ok) throw new Error('Failed to load skeleton')
+        const skeletonResponse = await fetch(`${basePath}/skeleton_0`)
+        if (!skeletonResponse.ok) throw new Error(`加载骨架失败: ${skeletonResponse.status}`)
         const skeletonBuffer = await skeletonResponse.arrayBuffer()
 
         if (destroyed || !app.stage) { app.destroy(true); return }
@@ -139,7 +161,7 @@ export function SpinePet({ onPetClick }: SpinePetProps) {
         const skeletonLoader = new SkeletonBinary(atlasLoader)
         const skeletonData = skeletonLoader.readSkeletonData(new Uint8Array(skeletonBuffer))
 
-        // 创建 Spine 对象 — 1:1 原始精度（不缩小）
+        // 创建 Spine 对象
         const spine = new Spine(skeletonData)
         spine.scale.set(1.0)
         spine.x = MIN_WIN / 2
@@ -173,29 +195,39 @@ export function SpinePet({ onPetClick }: SpinePetProps) {
           requestAnimationFrame(() => {
             fitWindowToSpine(spine)
           })
+
+          setIsLoading(false)
         }
       } catch (e) {
         if (!destroyed) {
-          console.error('Failed to init Spine:', e)
+          const msg = e instanceof Error ? e.message : String(e)
+          console.error('[SpinePet] 初始化失败:', msg)
+          setIsLoading(false)
+
           const errDiv = document.createElement('div')
           errDiv.style.cssText =
             'position:absolute;top:10px;left:10px;color:red;font-size:12px;max-width:280px;word-break:break-all;background:rgba(0,0,0,0.5);padding:5px;'
-          errDiv.textContent = `Error: ${e instanceof Error ? e.message : String(e)}`
+          errDiv.textContent = `Error: ${msg}`
           container.appendChild(errDiv)
         }
       }
     }
 
-    init()
+    // 如果皮肤已变化，先淡出再重新初始化
+    if (prevSkinRef.current !== skinId) {
+      prevSkinRef.current = skinId
+      if (container) {
+        container.style.opacity = '0'
+        setTimeout(init, FADE_DURATION)
+      }
+    } else {
+      init()
+    }
 
     return () => {
       destroyed = true
-      if (appRef.current) {
-        appRef.current.destroy(true, { children: true, texture: true, baseTexture: true })
-        appRef.current = null
-      }
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [skinId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ==================== mood 驱动动画切换 ====================
   useEffect(() => {
@@ -218,6 +250,14 @@ export function SpinePet({ onPetClick }: SpinePetProps) {
     }
   }, [mood])
 
+  // ==================== 皮肤加载完成后淡入 ====================
+  useEffect(() => {
+    if (!isLoading && containerRef.current) {
+      containerRef.current.style.transition = `opacity ${FADE_DURATION}ms ease`
+      containerRef.current.style.opacity = '1'
+    }
+  }, [isLoading])
+
   return (
     <>
       <style>{`
@@ -233,9 +273,39 @@ export function SpinePet({ onPetClick }: SpinePetProps) {
           cursor: isDragging ? 'grabbing' : 'grab',
           userSelect: 'none',
           WebkitUserSelect: 'none',
+          opacity: 1,
+          transition: `opacity ${FADE_DURATION}ms ease`,
         }}
         onMouseDown={handleMouseDown}
       >
+        {/* 加载指示器 */}
+        {isLoading && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(0,0,0,0.1)',
+              borderRadius: 8,
+              zIndex: 10,
+            }}
+          >
+            <div
+              style={{
+                width: 24,
+                height: 24,
+                border: '3px solid rgba(255,255,255,0.3)',
+                borderTopColor: '#fff',
+                borderRadius: '50%',
+                animation: 'spin 0.8s linear infinite',
+              }}
+            />
+            <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+          </div>
+        )}
+
         {/* 关闭按钮 */}
         <button
           onClick={async (e) => {

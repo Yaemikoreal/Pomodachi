@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { invoke } from '@tauri-apps/api/core';
 import { ChatPanel } from './ChatPanel';
 import { TaskPanel } from './TaskPanel';
 import { useChat } from '../hooks/useChat';
 import { useSettings, type AppSettings } from '../hooks/useSettings';
 import { useTasks } from '../hooks/useTasks';
+import { AVAILABLE_SKINS } from '../data/skins';
 
 type SidebarTab = 'chat' | 'tasks' | 'settings';
 
@@ -39,6 +41,26 @@ export function Sidebar({ open, onOpenChange }: SidebarProps) {
       checkClaude();
     }
   }, [isOpen, activeTab, loadSettings]);
+
+  // 皮肤状态
+  const [currentSkin, setCurrentSkin] = useState('firefly');
+
+  // 加载当前皮肤
+  useEffect(() => {
+    invoke<string>('get_pet_skin')
+      .then(setCurrentSkin)
+      .catch(() => {});
+  }, []);
+
+  // 皮肤切换处理
+  const handleSkinChange = useCallback(async (skinId: string) => {
+    setCurrentSkin(skinId);
+    try {
+      await invoke('set_pet_skin', { skinId });
+    } catch (err) {
+      console.error('切换皮肤失败:', err);
+    }
+  }, []);
 
   // 编辑态随加载结果同步
   useEffect(() => {
@@ -163,6 +185,39 @@ export function Sidebar({ open, onOpenChange }: SidebarProps) {
                         onChange={(v) => updateSetting('launchOnStartup', v)}
                       />
                     </SettingRow>
+                  </Section>
+
+                  {/* ===== 宠物皮肤 ===== */}
+                  <Section title="宠物皮肤">
+                    <div className="grid grid-cols-2 gap-2 mt-1">
+                      {AVAILABLE_SKINS.map((skin) => (
+                        <button
+                          key={skin.id}
+                          onClick={() => handleSkinChange(skin.id)}
+                          className={`p-2 rounded-lg border-2 transition-all ${
+                            currentSkin === skin.id
+                              ? 'border-blue-500 bg-blue-50 shadow-sm'
+                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          <img
+                            src={skin.thumbnail}
+                            alt={skin.name}
+                            className="w-full h-14 object-contain rounded"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = '';
+                              (e.target as HTMLImageElement).style.background = '#f0f0f0';
+                            }}
+                          />
+                          <p className="text-[11px] mt-1 font-medium text-gray-700">
+                            {skin.name}
+                          </p>
+                          <p className="text-[10px] text-gray-400">
+                            {skin.description}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
                   </Section>
 
                   {/* ===== 窗口 ===== */}

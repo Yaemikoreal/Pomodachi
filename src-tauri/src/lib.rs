@@ -7,7 +7,7 @@ mod task;
 mod timer;
 
 use ai::AiClient;
-use db::{AiConfig, BlocklistItem, ChatMessage, Database, PomodoroRecord, Task};
+use db::{Achievement, AiConfig, BlocklistItem, ChatMessage, Database, FocusStats, PomodoroRecord, Task};
 use monitor::{DistractionEvent, ProcessMonitor};
 use pet::PetManager;
 use std::sync::Arc;
@@ -111,6 +111,26 @@ async fn set_pet_mood(
     mood: String,
 ) -> Result<(), String> {
     state.pet_manager.set_mood(&mood).await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_pet_skin(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    Ok(state.pet_manager.get_skin_id().await)
+}
+
+#[tauri::command]
+async fn set_pet_skin(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    skin_id: String,
+) -> Result<(), String> {
+    // 更新内存
+    state.pet_manager.set_skin_id(&skin_id).await;
+    // 持久化到数据库
+    state.db.set_skin_id(&skin_id).map_err(|e| e.to_string())?;
+    // 通知前端皮肤已变更
+    let _ = app.emit("pet-skin-changed", &skin_id);
     Ok(())
 }
 
@@ -364,6 +384,18 @@ async fn get_all_settings(
     state.db.get_all_settings().map_err(|e| e.to_string())
 }
 
+// ==================== 成就/统计命令 ====================
+
+#[tauri::command]
+async fn get_focus_stats(state: tauri::State<'_, AppState>) -> Result<FocusStats, String> {
+    state.db.get_focus_stats().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_achievements(state: tauri::State<'_, AppState>) -> Result<Vec<Achievement>, String> {
+    state.db.get_achievements().map_err(|e| e.to_string())
+}
+
 // ==================== 应用控制命令 ====================
 
 #[tauri::command]
@@ -397,8 +429,10 @@ pub fn run() {
             // 初始化计时器
             let timer = PomodoroTimer::new(app.handle().clone());
 
-            // 初始化宠物管理器（纯情绪状态机，无需数据库）
-            let pet_manager = PetManager::new();
+            // 初始化宠物管理器
+            // 从数据库加载皮肤 ID
+            let skin_id = db.get_skin_id().unwrap_or_else(|_| "firefly".to_string());
+            let pet_manager = PetManager::new_with_skin(&skin_id);
 
             // 初始化任务管理器
             let task_manager = TaskManager::new(db.clone());
@@ -425,7 +459,7 @@ pub fn run() {
             let app_handle = app.handle().clone();
             let app_handle_2 = app_handle.clone();
 
-            // 监听计时完成事件 → 记录专注 + 发送通知
+            // 监听计时完成事件 → 记录专注 + 更新统计 + 检查成就
             let handle_1 = app_handle.clone();
             app_handle.listen("timer-complete", move |event| {
                 if let Ok(timer_state) = serde_json::from_str::<TimerState>(event.payload()) {
@@ -446,6 +480,21 @@ pub fn run() {
                             let _ = state
                                 .db
                                 .add_pomodoro_record(timer_state.duration as i32);
+                            // 更新专注统计
+                            if let Ok(stats) = state
+                                .db
+                                .update_focus_stats(timer_state.duration as i32)
+                            {
+                                // 检查是否有新成就解锁
+                                if let Ok(new_achievements) = state
+                                    .db
+                                    .check_achievements(&stats)
+                                {
+                                    for ach in &new_achievements {
+                                        let _ = handle.emit("achievement-unlocked", ach);
+                                    }
+                                }
+                            }
                         });
                     }
                 }
@@ -521,6 +570,8 @@ pub fn run() {
             // 宠物
             get_pet_mood,
             set_pet_mood,
+            get_pet_skin,
+            set_pet_skin,
             // 专注记录
             add_pomodoro_record,
             complete_pomodoro_record,
@@ -551,6 +602,9 @@ pub fn run() {
             get_setting,
             set_setting,
             get_all_settings,
+            // 成就/统计
+            get_focus_stats,
+            get_achievements,
             // 应用控制
             exit_app,
             set_pet_window_size,

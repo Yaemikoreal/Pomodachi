@@ -1,8 +1,8 @@
 # 🍅 番茄宠物 (Toumato)
 
-基于 Tauri v2 的本地优先、游戏化 AI 番茄钟桌面宠物。
+基于 Tauri v2 的本地优先 AI 番茄钟桌面宠物/个人助理。
 
-> 把专注时间具象化为宠物的生命值和成长。专注时宠物开心成长，摸鱼时宠物受伤生气。
+> 把专注时间具象化为宠物的情绪陪伴。专注时宠物开心陪伴，摸鱼时宠物发出提醒。AI 作为"宠物灵魂"提供拟人化交互和任务管理帮助。
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Tauri](https://img.shields.io/badge/Tauri-v2-blue.svg)
@@ -13,9 +13,9 @@
 
 - 🐱 **桌面宠物** - 透明无边框窗口，始终置顶的可爱宠物
 - 🎯 **番茄钟** - 25+5+15 专注模式（可自定义）
-- 🎮 **游戏化** - 宠物成长系统、EXP、金币、HP
+- 🎮 **成就系统** - 专注统计、里程碑解锁、连续天数追踪
 - 👀 **分心检测** - 自动监听前台窗口，抓包摸鱼行为
-- 🤖 **AI 灵魂** - 情绪化反馈、每日战报、宠物聊天
+- 🤖 **AI 助理** - Claude Code CLI 驱动的智能聊天、任务管理
 - 🎨 **Spine 动画** - 流畅的骨骼动画支持
 
 ## 📸 截图
@@ -66,12 +66,9 @@ pnpm tauri build
 | 操作 | 说明 |
 |------|------|
 | **拖动** | 鼠标左键按住宠物拖动 |
-| **缩放** | 滚轮上下滚动缩放 |
-| **快捷键** | `Ctrl + +` 放大 / `Ctrl + -` 缩小 / `Ctrl + 0` 重置 |
-
-### 缩放级别
-
-`50% → 75% → 100% → 125% → 150% → 200%`
+| **聊天** | 点击宠物弹出聊天气泡，或点击右上角 💬 打开侧边栏 |
+| **计时** | 右下角状态面板控制专注/休息计时 |
+| **任务** | 侧边栏任务标签管理待办事项 |
 
 ## 📁 项目结构
 
@@ -80,15 +77,18 @@ toumato/
 ├── src-tauri/          # Rust 后端 (Tauri)
 │   ├── src/
 │   │   ├── main.rs
-│   │   ├── lib.rs
-│   │   ├── timer.rs    # 番茄钟引擎 (规划中)
-│   │   ├── monitor.rs  # 进程监听 (规划中)
-│   │   ├── db.rs       # SQLite 操作 (规划中)
-│   │   └── ai.rs       # AI 接口 (规划中)
+│   │   ├── lib.rs      # IPC 命令 + 事件监听 + 系统托盘
+│   │   ├── timer.rs    # 番茄钟引擎 (Focus/ShortBreak/LongBreak)
+│   │   ├── monitor.rs  # 进程监听 (Windows API)
+│   │   ├── db.rs       # SQLite 操作 (7 表)
+│   │   ├── pet.rs      # 宠物情绪状态机 (6 种情绪)
+│   │   ├── ai.rs       # Claude CLI AI 接口
+│   │   ├── task.rs     # 任务管理器
+│   │   └── notification.rs  # Windows 通知
 │   └── tauri.conf.json
 ├── src/                # React 前端
-│   ├── components/
-│   │   └── SpinePet.tsx
+│   ├── components/     # SpinePet, StatusPanel, Sidebar, ChatPanel, TaskPanel...
+│   ├── hooks/          # useTimer, usePet, useChat, useTasks, usePomodoro...
 │   ├── App.tsx
 │   └── main.tsx
 ├── public/
@@ -101,10 +101,10 @@ toumato/
 | 层 | 技术 |
 |---|---|
 | 桌面框架 | Tauri v2 (Rust) |
-| 前端 | React 19 + TypeScript + TailwindCSS |
-| 动画 | PixiJS + pixi-spine |
-| 本地存储 | SQLite (规划中) |
-| AI 接入 | OpenAI 兼容格式 (规划中) |
+| 前端 | React 19 + TypeScript + TailwindCSS + Framer Motion |
+| 动画 | PixiJS (pixi.js-legacy) + pixi-spine 4.1 |
+| 本地存储 | SQLite (rusqlite) |
+| AI 接入 | Claude Code CLI 子进程通信 |
 
 ## 📖 开发文档
 

@@ -1,4 +1,4 @@
-use rusqlite::{Connection, Result};
+use rusqlite::{Connection, Result, params};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -75,6 +75,29 @@ pub struct AppSetting {
     pub key: String,
     pub value: String,
     pub updated_at: String,
+}
+
+/// 成就定义
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Achievement {
+    pub id: i64,
+    pub key: String,
+    pub name: String,
+    pub description: String,
+    pub unlocked_at: Option<String>,
+    pub icon: String,
+}
+
+/// 专注统计
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct FocusStats {
+    pub total_pomodoros: i32,
+    pub total_focus_seconds: i64,
+    pub current_streak: i32,
+    pub longest_streak: i32,
+    pub last_focus_date: Option<String>,
 }
 
 /// 数据库管理器
@@ -178,12 +201,82 @@ impl Database {
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
+            -- 成就表
+            CREATE TABLE IF NOT EXISTS achievements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                key TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL,
+                unlocked_at TEXT,
+                icon TEXT NOT NULL DEFAULT '🏆'
+            );
+
+            -- 专注统计表（单行累计）
+            CREATE TABLE IF NOT EXISTS focus_stats (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                total_pomodoros INTEGER NOT NULL DEFAULT 0,
+                total_focus_seconds INTEGER NOT NULL DEFAULT 0,
+                current_streak INTEGER NOT NULL DEFAULT 0,
+                longest_streak INTEGER NOT NULL DEFAULT 0,
+                last_focus_date TEXT
+            );
+
             -- 初始化宠物数据和 AI 配置（如果不存在）
             INSERT OR IGNORE INTO pet (id, name, mood) VALUES (1, '番茄猫', 'happy');
             INSERT OR IGNORE INTO ai_config (id) VALUES (1);
             ",
         )?;
 
+        // 运行数据库迁移
+        self.run_migrations()?;
+
+        // 初始化默认成就
+        self.init_default_achievements()?;
+
+        Ok(())
+    }
+
+    /// 运行数据库迁移（列添加等）
+    fn run_migrations(&self) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+
+        // 迁移：pet 表添加 skin_id 列（如果不存在）
+        let has_skin_id: bool = conn
+            .prepare("PRAGMA table_info(pet)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .filter_map(|r| r.ok())
+            .any(|name| name == "skin_id");
+
+        if !has_skin_id {
+            conn.execute(
+                "ALTER TABLE pet ADD COLUMN skin_id TEXT NOT NULL DEFAULT 'firefly'",
+                [],
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// 初始化默认成就定义
+    fn init_default_achievements(&self) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let achievements = vec![
+            ("first_pomodoro", "专注新手", "完成第一个番茄钟 🍅", "🌱"),
+            ("tenth_pomodoro", "专注达人", "累计完成 10 个番茄钟 🔥", "🔥"),
+            ("fifty_pomodoro", "专注大师", "累计完成 50 个番茄钟 💪", "💪"),
+            ("hundred_pomodoro", "专注传说", "累计完成 100 个番茄钟 👑", "👑"),
+            ("total_5_hours", "时光积累·初", "累计专注 5 小时 ⏳", "⏳"),
+            ("total_20_hours", "时光积累·中", "累计专注 20 小时 ⌛", "⌛"),
+            ("streak_3", "三日坚持", "连续 3 天完成专注 📆", "📆"),
+            ("streak_7", "七日如一日", "连续 7 天完成专注 📅", "📅"),
+            ("streak_30", "月度守护", "连续 30 天完成专注 🗓️", "🗓️"),
+        ];
+        for (key, name, description, icon) in achievements {
+            conn.execute(
+                "INSERT OR IGNORE INTO achievements (key, name, description, icon) VALUES (?1, ?2, ?3, ?4)",
+                params![key, name, description, icon],
+            )?;
+        }
         Ok(())
     }
 
@@ -212,6 +305,26 @@ impl Database {
         conn.execute(
             "UPDATE pet SET mood = ?1, updated_at = datetime('now') WHERE id = 1",
             rusqlite::params![mood],
+        )?;
+        Ok(())
+    }
+
+    /// 获取宠物皮肤 ID
+    pub fn get_skin_id(&self) -> Result<String> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT skin_id FROM pet WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )
+    }
+
+    /// 设置宠物皮肤 ID
+    pub fn set_skin_id(&self, skin_id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE pet SET skin_id = ?1, updated_at = datetime('now') WHERE id = 1",
+            rusqlite::params![skin_id],
         )?;
         Ok(())
     }
@@ -529,5 +642,211 @@ impl Database {
             .collect::<Result<Vec<_>>>()?;
 
         Ok(settings)
+    }
+
+    // ==================== 成就/统计方法 ====================
+
+    /// 获取专注统计
+    pub fn get_focus_stats(&self) -> Result<FocusStats> {
+        let conn = self.conn.lock().unwrap();
+        // 确保统计行存在
+        conn.execute(
+            "INSERT OR IGNORE INTO focus_stats (id) VALUES (1)",
+            [],
+        )?;
+
+        conn.query_row(
+            "SELECT total_pomodoros, total_focus_seconds, current_streak, longest_streak, last_focus_date \
+             FROM focus_stats WHERE id = 1",
+            [],
+            |row| {
+                Ok(FocusStats {
+                    total_pomodoros: row.get(0)?,
+                    total_focus_seconds: row.get(1)?,
+                    current_streak: row.get(2)?,
+                    longest_streak: row.get(3)?,
+                    last_focus_date: row.get(4)?,
+                })
+            },
+        )
+    }
+
+    /// 更新专注统计（番茄钟完成后调用）
+    pub fn update_focus_stats(&self, duration_seconds: i32) -> Result<FocusStats> {
+        let conn = self.conn.lock().unwrap();
+
+        // 确保行存在
+        conn.execute("INSERT OR IGNORE INTO focus_stats (id) VALUES (1)", [])?;
+
+        // 获取当前日期
+        let today: String = conn.query_row(
+            "SELECT date('now')",
+            [],
+            |row| row.get(0),
+        )?;
+
+        // 获取上次专注日期
+        let last_date: Option<String> = conn.query_row(
+            "SELECT last_focus_date FROM focus_stats WHERE id = 1",
+            [],
+            |row| row.get(0),
+        ).ok();
+
+        // 计算连续天数
+        let new_streak = match last_date {
+            Some(ref d) if d == &today => {
+                // 今天已专注过，保持连续
+                None // 用 SQL 保持原值
+            }
+            Some(ref d) => {
+                // 检查昨天
+                let yesterday: String = conn.query_row(
+                    "SELECT date('now', '-1 day')",
+                    [],
+                    |row| row.get(0),
+                ).unwrap_or_default();
+                if d == &yesterday {
+                    Some(1) // 连续 +1，由 SQL 累加
+                } else {
+                    Some(1) // 重置为 1（断签）
+                }
+            }
+            None => Some(1), // 首次专注
+        };
+
+        // 更新统计
+        if new_streak == Some(1) {
+            // 检查昨天是否专注过
+            let is_yesterday = match last_date {
+                Some(ref d) => {
+                    let yesterday: String = conn.query_row(
+                        "SELECT date('now', '-1 day')",
+                        [],
+                        |row| row.get(0),
+                    ).unwrap_or_default();
+                    d == &yesterday
+                }
+                None => false,
+            };
+
+            if is_yesterday {
+                // 连续 +1
+                conn.execute(
+                    "UPDATE focus_stats SET
+                        total_pomodoros = total_pomodoros + 1,
+                        total_focus_seconds = total_focus_seconds + ?1,
+                        current_streak = current_streak + 1,
+                        longest_streak = MAX(longest_streak, current_streak + 1),
+                        last_focus_date = date('now')
+                    WHERE id = 1",
+                    params![duration_seconds],
+                )?;
+            } else {
+                // 重置连续为 1
+                conn.execute(
+                    "UPDATE focus_stats SET
+                        total_pomodoros = total_pomodoros + 1,
+                        total_focus_seconds = total_focus_seconds + ?1,
+                        current_streak = 1,
+                        last_focus_date = date('now')
+                    WHERE id = 1",
+                    params![duration_seconds],
+                )?;
+            }
+        } else {
+            // 今天已专注过，只累加数据，不改变连续值
+            conn.execute(
+                "UPDATE focus_stats SET
+                    total_pomodoros = total_pomodoros + 1,
+                    total_focus_seconds = total_focus_seconds + ?1
+                WHERE id = 1",
+                params![duration_seconds],
+            )?;
+        }
+
+        // 更新 longest_streak（确保不遗漏）
+        conn.execute(
+            "UPDATE focus_stats SET longest_streak = MAX(longest_streak, current_streak) WHERE id = 1",
+            [],
+        )?;
+
+        drop(conn);
+        self.get_focus_stats()
+    }
+
+    /// 获取所有成就列表
+    pub fn get_achievements(&self) -> Result<Vec<Achievement>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, key, name, description, unlocked_at, icon \
+             FROM achievements ORDER BY id",
+        )?;
+
+        let achievements = stmt
+            .query_map([], |row| {
+                Ok(Achievement {
+                    id: row.get(0)?,
+                    key: row.get(1)?,
+                    name: row.get(2)?,
+                    description: row.get(3)?,
+                    unlocked_at: row.get(4)?,
+                    icon: row.get(5)?,
+                })
+            })?
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(achievements)
+    }
+
+    /// 检查是否有新解锁的成就
+    pub fn check_achievements(&self, stats: &FocusStats) -> Result<Vec<Achievement>> {
+        let mut new_achievements = Vec::new();
+
+        // 检查每个成就条件
+        let checks: Vec<(&str, bool)> = vec![
+            ("first_pomodoro", stats.total_pomodoros >= 1),
+            ("tenth_pomodoro", stats.total_pomodoros >= 10),
+            ("fifty_pomodoro", stats.total_pomodoros >= 50),
+            ("hundred_pomodoro", stats.total_pomodoros >= 100),
+            ("total_5_hours", stats.total_focus_seconds >= 5 * 3600),
+            ("total_20_hours", stats.total_focus_seconds >= 20 * 3600),
+            ("streak_3", stats.current_streak >= 3),
+            ("streak_7", stats.current_streak >= 7),
+            ("streak_30", stats.current_streak >= 30),
+        ];
+
+        let conn = self.conn.lock().unwrap();
+        for (key, met) in checks {
+            if met {
+                // 尝试解锁（只有在未解锁时才返回行）
+                let affected = conn.execute(
+                    "UPDATE achievements SET unlocked_at = datetime('now') \
+                     WHERE key = ?1 AND unlocked_at IS NULL",
+                    params![key],
+                )?;
+                if affected > 0 {
+                    // 读取完整成就数据
+                    if let Ok(ach) = conn.query_row(
+                        "SELECT id, key, name, description, unlocked_at, icon \
+                         FROM achievements WHERE key = ?1",
+                        params![key],
+                        |row| {
+                            Ok(Achievement {
+                                id: row.get(0)?,
+                                key: row.get(1)?,
+                                name: row.get(2)?,
+                                description: row.get(3)?,
+                                unlocked_at: row.get(4)?,
+                                icon: row.get(5)?,
+                            })
+                        },
+                    ) {
+                        new_achievements.push(ach);
+                    }
+                }
+            }
+        }
+
+        Ok(new_achievements)
     }
 }

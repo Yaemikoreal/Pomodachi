@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTimer, TimerMode } from '../hooks/useTimer';
 import { usePet, PetMood } from '../hooks/usePet';
 import { usePomodoro } from '../hooks/usePomodoro';
+import { useAchievements } from '../hooks/useAchievements';
 
 // 情绪图标映射
 const moodEmojis: Record<PetMood, string> = {
@@ -25,7 +26,16 @@ export function StatusPanel() {
   const timer = useTimer();
   const { mood, petName } = usePet();
   const { todayCount, fetchTodayCount } = usePomodoro();
+  const {
+    achievements,
+    focusStats,
+    unlockedCount,
+    totalCount,
+    formatFocusTime,
+    isLoading: achLoading,
+  } = useAchievements();
   const [isVisible, setIsVisible] = useState(true);
+  const [showAchievements, setShowAchievements] = useState(false);
 
   // 获取今日专注次数
   useEffect(() => {
@@ -155,6 +165,81 @@ export function StatusPanel() {
               <span className="text-sm text-gray-600">
                 今日专注: <span className="font-bold text-green-600">{todayCount}</span> 个番茄
               </span>
+            </div>
+
+            {/* 分割线 */}
+            <div className="border-t border-gray-200 my-3" />
+
+            {/* 成就概览 */}
+            <div>
+              <button
+                onClick={() => setShowAchievements(!showAchievements)}
+                className="w-full flex items-center justify-between text-sm text-gray-600 hover:text-gray-800 transition-colors"
+              >
+                <span>
+                  🏆 成就 ({unlockedCount}/{totalCount})
+                </span>
+                <span className="text-xs">{showAchievements ? '▲' : '▼'}</span>
+              </button>
+
+              <AnimatePresence>
+                {showAchievements && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden"
+                  >
+                    {/* 专注统计 */}
+                    {focusStats && (
+                      <div className="mt-2 mb-3 space-y-1 text-xs text-gray-500">
+                        <div className="flex justify-between">
+                          <span>累计专注</span>
+                          <span className="font-medium text-gray-700">
+                            {formatFocusTime(focusStats.totalFocusSeconds)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>累计番茄</span>
+                          <span className="font-medium text-gray-700">{focusStats.totalPomodoros} 个</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>当前连续</span>
+                          <span className="font-medium text-orange-600">{focusStats.currentStreak} 天</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>最长连续</span>
+                          <span className="font-medium text-orange-600">{focusStats.longestStreak} 天</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 成就列表 */}
+                    {achLoading ? (
+                      <div className="py-2 text-center text-xs text-gray-400">加载中...</div>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-1.5 pb-2">
+                        {achievements.map((ach) => (
+                          <div
+                            key={ach.id}
+                            title={ach.description}
+                            className={`flex flex-col items-center p-1.5 rounded-lg text-center ${
+                              ach.unlockedAt
+                                ? 'bg-amber-50'
+                                : 'bg-gray-50 opacity-50'
+                            }`}
+                          >
+                            <span className="text-lg">{ach.icon}</span>
+                            <span className="text-[10px] text-gray-500 mt-0.5 leading-tight">
+                              {ach.name}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </motion.div>
         )}
