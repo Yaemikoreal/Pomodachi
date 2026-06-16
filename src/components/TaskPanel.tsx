@@ -124,7 +124,7 @@ export function TaskPanel() {
 
         {!isLoading && !error && tasks.length === 0 && (
           <div className="p-8 text-center">
-            <div className="text-3xl mb-2">📋</div>
+            <div className="text-3xl mb-2">[]</div>
             <p className="text-gray-400 text-sm">还没有任务~</p>
             <p className="text-gray-300 text-xs mt-1">点击上方按钮添加一个吧</p>
           </div>

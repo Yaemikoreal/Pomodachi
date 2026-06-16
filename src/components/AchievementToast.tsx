@@ -78,7 +78,7 @@ export function AchievementToast({ achievement, onClose }: AchievementToastProps
                 marginBottom: 2,
               }}
             >
-              🎉 成就解锁
+              成就解锁
             </div>
             <div
               style={{

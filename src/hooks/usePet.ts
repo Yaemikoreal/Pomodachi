@@ -1,7 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
-export type PetMood = 'happy' | 'focused' | 'tired' | 'sleeping' | 'listening' | 'thinking';
+/** 宠物情绪状态，参考 agent-pet 的 messageMap 设计 */
+export type PetMood =
+  | 'happy'      // 开心 - success/idle
+  | 'focused'    // 专注 - processing
+  | 'tired'      // 疲惫 - waiting
+  | 'sleeping'   // 睡眠 - idle
+  | 'listening'  // 聆听 - new_message
+  | 'thinking'   // 思考 - review_required
+  | 'error'      // 错误/分心 - error
+  | 'waving';    // 挥手打招呼 - new_message
 
 export function usePet() {
   const [mood, setMood] = useState<PetMood>('happy');

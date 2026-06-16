@@ -126,8 +126,7 @@ impl Database {
         Ok(db)
     }
 
-    /// 创建内存数据库（仅用于测试）
-    #[cfg(test)]
+    /// 创建内存数据库（用于测试）
     pub fn new_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
         let db = Database {

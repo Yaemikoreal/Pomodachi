@@ -261,3 +261,178 @@ impl AiClient {
         *self.session_id.lock().await = None;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::ChatMessage;
+
+    #[test]
+    fn test_build_prompt_single_message() {
+        let messages = vec![ChatMessage {
+            id: 1,
+            role: "user".to_string(),
+            content: "你好".to_string(),
+            created_at: "2026-06-16T08:00:00Z".to_string(),
+        }];
+
+        let prompt = AiClient::build_prompt(&messages);
+        assert_eq!(prompt, "[用户]\n你好");
+    }
+
+    #[test]
+    fn test_build_prompt_multiple_messages() {
+        let messages = vec![
+            ChatMessage {
+                id: 1,
+                role: "system".to_string(),
+                content: "你是番茄猫".to_string(),
+                created_at: "2026-06-16T08:00:00Z".to_string(),
+            },
+            ChatMessage {
+                id: 2,
+                role: "user".to_string(),
+                content: "今天天气怎么样？".to_string(),
+                created_at: "2026-06-16T08:01:00Z".to_string(),
+            },
+            ChatMessage {
+                id: 3,
+                role: "assistant".to_string(),
+                content: "今天天气很好呢！".to_string(),
+                created_at: "2026-06-16T08:02:00Z".to_string(),
+            },
+        ];
+
+        let prompt = AiClient::build_prompt(&messages);
+        assert!(prompt.contains("[系统设定]\n你是番茄猫"));
+        assert!(prompt.contains("[用户]\n今天天气怎么样？"));
+        assert!(prompt.contains("[番茄猫]\n今天天气很好呢！"));
+    }
+
+    #[test]
+    fn test_build_prompt_unknown_role() {
+        let messages = vec![ChatMessage {
+            id: 1,
+            role: "unknown".to_string(),
+            content: "测试内容".to_string(),
+            created_at: "2026-06-16T08:00:00Z".to_string(),
+        }];
+
+        let prompt = AiClient::build_prompt(&messages);
+        assert_eq!(prompt, "[未知]\n测试内容");
+    }
+
+    #[test]
+    fn test_generate_system_prompt_happy() {
+        let prompt = AiClient::generate_system_prompt("happy", 5);
+        assert!(prompt.contains("心情: 开心、活力充沛"));
+        assert!(prompt.contains("今日专注: 5 个番茄"));
+        assert!(prompt.contains("开心、活力充沛 — 据此调整你的回应风格"));
+    }
+
+    #[test]
+    fn test_generate_system_prompt_focused() {
+        let prompt = AiClient::generate_system_prompt("focused", 0);
+        assert!(prompt.contains("心情: 专注、安静"));
+        assert!(prompt.contains("今日专注: 0 个番茄"));
+    }
+
+    #[test]
+    fn test_generate_system_prompt_tired() {
+        let prompt = AiClient::generate_system_prompt("tired", 10);
+        assert!(prompt.contains("心情: 疲惫、需要休息"));
+    }
+
+    #[test]
+    fn test_generate_system_prompt_sleeping() {
+        let prompt = AiClient::generate_system_prompt("sleeping", 3);
+        assert!(prompt.contains("心情: 困倦、想睡觉"));
+    }
+
+    #[test]
+    fn test_generate_system_prompt_listening() {
+        let prompt = AiClient::generate_system_prompt("listening", 2);
+        assert!(prompt.contains("心情: 好奇、等待主人说话"));
+    }
+
+    #[test]
+    fn test_generate_system_prompt_thinking() {
+        let prompt = AiClient::generate_system_prompt("thinking", 1);
+        assert!(prompt.contains("心情: 认真思索中"));
+    }
+
+    #[test]
+    fn test_generate_system_prompt_unknown_mood() {
+        let prompt = AiClient::generate_system_prompt("custom_mood", 0);
+        assert!(prompt.contains("心情: 平静"));
+    }
+
+    #[tokio::test]
+    async fn test_new_client() {
+        let config = AiConfig {
+            id: 1,
+            max_turns: 3,
+            max_budget_usd: Some(0.1),
+            updated_at: "2026-06-16".to_string(),
+        };
+
+        let client = AiClient::new(config.clone());
+        let stored_config = client.get_config().await;
+
+        assert_eq!(stored_config.max_turns, 3);
+        assert_eq!(stored_config.max_budget_usd, Some(0.1));
+    }
+
+    #[tokio::test]
+    async fn test_update_config() {
+        let config = AiConfig {
+            id: 1,
+            max_turns: 3,
+            max_budget_usd: Some(0.1),
+            updated_at: "2026-06-16".to_string(),
+        };
+
+        let client = AiClient::new(config);
+
+        // 设置一个 session_id
+        *client.session_id.lock().await = Some("test_session".to_string());
+
+        // 更新配置
+        let new_config = AiConfig {
+            id: 1,
+            max_turns: 5,
+            max_budget_usd: Some(0.2),
+            updated_at: "2026-06-16".to_string(),
+        };
+
+        client.update_config(new_config).await;
+
+        let stored_config = client.get_config().await;
+        assert_eq!(stored_config.max_turns, 5);
+        assert_eq!(stored_config.max_budget_usd, Some(0.2));
+
+        // 验证 session_id 被重置
+        let session_id = client.session_id.lock().await.clone();
+        assert!(session_id.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_clear_session() {
+        let config = AiConfig {
+            id: 1,
+            max_turns: 3,
+            max_budget_usd: Some(0.1),
+            updated_at: "2026-06-16".to_string(),
+        };
+
+        let client = AiClient::new(config);
+
+        // 设置一个 session_id
+        *client.session_id.lock().await = Some("test_session".to_string());
+        assert!(client.session_id.lock().await.is_some());
+
+        // 清空会话
+        client.clear_session().await;
+        assert!(client.session_id.lock().await.is_none());
+    }
+}

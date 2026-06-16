@@ -102,7 +102,7 @@ export function Sidebar({ open, onOpenChange }: SidebarProps) {
         whileTap={{ scale: 0.9 }}
         onClick={() => setIsOpen(!isOpen)}
       >
-        {isOpen ? '✕' : '💬'}
+        {isOpen ? 'X' : 'C'}
       </motion.button>
 
       {/* 侧边栏 */}
@@ -118,7 +118,7 @@ export function Sidebar({ open, onOpenChange }: SidebarProps) {
             {/* 头部 */}
             <div className="flex items-center justify-between p-4 border-b border-gray-200">
               <div className="flex items-center gap-2">
-                <span className="text-xl">🐱</span>
+                <span className="text-xl">:)</span>
                 <h2 className="font-semibold text-gray-800">番茄猫</h2>
               </div>
               <button
@@ -143,10 +143,10 @@ export function Sidebar({ open, onOpenChange }: SidebarProps) {
                       : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >
-                  {tab === 'chat' && '💬 聊天'}
+                  {tab === 'chat' && '聊天'}
                   {tab === 'tasks' && (
                     <>
-                      📋 任务
+                      任务
                       {pendingTasks > 0 && (
                         <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
                           {pendingTasks}
@@ -154,7 +154,7 @@ export function Sidebar({ open, onOpenChange }: SidebarProps) {
                       )}
                     </>
                   )}
-                  {tab === 'settings' && '⚙️ 设置'}
+                  {tab === 'settings' && '设置'}
                 </button>
               ))}
             </div>
@@ -333,7 +333,7 @@ export function Sidebar({ open, onOpenChange }: SidebarProps) {
                       }}
                       className="w-full py-1.5 text-xs text-gray-500 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
                     >
-                      🔄 重置 AI 对话会话
+                      重置 AI 对话会话
                     </button>
                   </Section>
 
@@ -343,7 +343,7 @@ export function Sidebar({ open, onOpenChange }: SidebarProps) {
                     disabled={isSaving || isLoading}
                     className="w-full py-2 rounded-lg text-sm font-medium bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 transition-colors"
                   >
-                    {isSaving ? '保存中...' : '💾 保存设置'}
+                    {isSaving ? '保存中...' : '保存设置'}
                   </button>
                 </div>
               )}

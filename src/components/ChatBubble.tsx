@@ -86,7 +86,7 @@ export function ChatBubble({ visible, onClose, onOpenSidebar }: ChatBubbleProps)
             }}
           >
             <span style={{ fontSize: 13, fontWeight: 600, color: '#333' }}>
-              🐱 番茄猫
+              番茄猫
             </span>
             <div style={{ display: 'flex', gap: 4 }}>
               <button
@@ -135,7 +135,7 @@ export function ChatBubble({ visible, onClose, onOpenSidebar }: ChatBubbleProps)
           >
             {messages.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#aaa', fontSize: 12, marginTop: 16 }}>
-                🐱 和我说点什么吧~
+                和我说点什么吧~
               </div>
             ) : (
               messages.map((msg) => (
@@ -165,7 +165,7 @@ export function ChatBubble({ visible, onClose, onOpenSidebar }: ChatBubbleProps)
             )}
             {isLoading && (
               <div style={{ textAlign: 'center', color: '#999', fontSize: 11, marginTop: 4 }}>
-                🐱 正在思考...
+                正在思考...
               </div>
             )}
             <div ref={messagesEndRef} />

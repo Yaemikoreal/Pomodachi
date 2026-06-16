@@ -14,8 +14,8 @@
       {
         "title": "番茄宠物",
         "label": "pet",
-        "width": 300,
-        "height": 300,
+        "width": 180,
+        "height": 180,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,

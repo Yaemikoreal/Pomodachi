@@ -5,14 +5,16 @@ import { usePet, PetMood } from '../hooks/usePet';
 import { usePomodoro } from '../hooks/usePomodoro';
 import { useAchievements } from '../hooks/useAchievements';
 
-// 情绪图标映射
-const moodEmojis: Record<PetMood, string> = {
-  happy: '😺',
-  focused: '😼',
-  tired: '😿',
-  sleeping: '😴',
-  listening: '👂',
-  thinking: '🤔',
+// 情绪图标映射（使用纯文本符号，禁止 emoji）
+const moodIcons: Record<PetMood, string> = {
+  happy: ':)',
+  focused: '*>',
+  tired: '~-~',
+  sleeping: 'zzZ',
+  listening: '~~',
+  thinking: '...',
+  error: '!>',
+  waving: 'Hi',
 };
 
 // 模式名称映射
@@ -60,7 +62,7 @@ export function StatusPanel() {
         whileTap={{ scale: 0.9 }}
         onClick={() => setIsVisible(!isVisible)}
       >
-        {isVisible ? '📊' : '📈'}
+        {isVisible ? 'v' : '^'}
       </motion.button>
 
       {/* 状态面板 */}
@@ -76,11 +78,11 @@ export function StatusPanel() {
             {/* 宠物心情 */}
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <span className="text-2xl">{moodEmojis[mood] || '😺'}</span>
+                <span className="text-2xl font-mono">{moodIcons[mood] || ':)'}</span>
                 <h3 className="font-semibold text-gray-800">{petName}</h3>
               </div>
               <span className="text-xs text-gray-500">
-                🍅 {todayCount} 个番茄
+                {todayCount} 个番茄
               </span>
             </div>
 
@@ -94,7 +96,7 @@ export function StatusPanel() {
                   {modeNames[timer.mode]}
                 </span>
                 <span className="text-xs text-gray-500">
-                  🍅 {timer.completedPomodoros}
+                  {timer.completedPomodoros}
                 </span>
               </div>
 
@@ -126,7 +128,7 @@ export function StatusPanel() {
                     whileTap={{ scale: 0.95 }}
                     onClick={timer.start}
                   >
-                    ▶ 开始
+                    开始
                   </motion.button>
                 ) : (
                   <motion.button
@@ -135,7 +137,7 @@ export function StatusPanel() {
                     whileTap={{ scale: 0.95 }}
                     onClick={timer.pause}
                   >
-                    ⏸ 暂停
+                    暂停
                   </motion.button>
                 )}
                 <motion.button
@@ -144,7 +146,7 @@ export function StatusPanel() {
                   whileTap={{ scale: 0.95 }}
                   onClick={timer.reset}
                 >
-                  ↺ 重置
+                  重置
                 </motion.button>
                 <motion.button
                   className="px-4 py-1.5 bg-blue-500 text-white rounded-full text-sm font-medium hover:bg-blue-600 transition-colors"
@@ -152,7 +154,7 @@ export function StatusPanel() {
                   whileTap={{ scale: 0.95 }}
                   onClick={timer.skip}
                 >
-                  ⏭ 跳过
+                  跳过
                 </motion.button>
               </div>
             </div>

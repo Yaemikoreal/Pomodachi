@@ -1,10 +1,10 @@
-mod ai;
-mod db;
+pub mod ai;
+pub mod db;
 mod monitor;
 mod notification;
-mod pet;
-mod task;
-mod timer;
+pub mod pet;
+pub mod task;
+pub mod timer;
 
 use ai::AiClient;
 use db::{Achievement, AiConfig, BlocklistItem, ChatMessage, Database, FocusStats, PomodoroRecord, Task};

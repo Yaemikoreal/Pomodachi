@@ -2,353 +2,329 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import * as PIXI from 'pixi.js-legacy'
 import { Spine, TextureAtlas, AtlasAttachmentLoader, SkeletonBinary } from '@pixi-spine/all-4.1'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { LogicalSize } from '@tauri-apps/api/dpi'
-import { invoke } from '@tauri-apps/api/core'
 import { usePet, type PetMood } from '../hooks/usePet'
 
-/** mood → 面部动画映射 */
+/** mood → 面部动画映射（参考 agent-pet 的 messageMap 设计） */
 const MOOD_FACE_MAP: Record<PetMood, string> = {
-  happy: 'Face_Happy',
-  focused: 'Face_Star',
-  tired: 'Face_CloseEyesHappy',
-  sleeping: 'Face_CloseEyesHappy',
-  listening: 'Face_Happy',
-  thinking: 'Face_Star',
+  happy: 'Face_Happy',           // 开心微笑
+  focused: 'Face_Star',          // 专注星星眼
+  tired: 'Face_CloseEyesHappy',  // 疲惫闭眼
+  sleeping: 'Face_CloseEyesHappy', // 睡眠（同疲惫）
+  listening: 'Face_Happy',       // 聆听（开心脸）
+  thinking: 'Face_Star',         // 思考（星星眼）
+  error: 'Face_Angry',           // 错误/分心（生气脸）
+  waving: 'Face_Happy',          // 挥手打招呼（开心脸）
 }
 
-/** 默认身体动画 */
-const BODY_IDLE = 'Move_Sit_Idle'
+/** mood → 身体动作映射（可选，增加表现力） */
+const MOOD_BODY_MAP: Partial<Record<PetMood, string>> = {
+  thinking: 'Hand_Ponder',       // 思考动作
+  error: 'Hand_Akimbo',          // 叉腰动作
+  waving: 'Hand_Clap',           // 拍手/打招呼
+}
 
-/** 窗口内边距（px） */
-const PADDING = 30
-/** 最小窗口尺寸 */
-const MIN_WIN = 200
-/** 皮肤切换淡出时间（ms） */
-const FADE_DURATION = 200
+const BODY_IDLE = 'Move_Sit_Idle'
+/** 从 model0.json 取到的 scale_factor */
+const MODEL_SCALE = 0.05
+/** 宠物目标显示尺寸 */
+const PET_SIZE = 150
+/** 调试模式 */
+const DEBUG = false
+const log = (...args: any[]) => DEBUG && console.log('[SpinePet]', ...args)
 
 interface SpinePetProps {
-  onPetClick?: () => void;
   skinId?: string;
 }
 
-/**
- * Spine 桌宠渲染组件
- * 渲染后自动裁剪窗口到角色大小，支持拖动、缩放和多皮肤切换
- */
-export function SpinePet({ onPetClick, skinId = 'firefly' }: SpinePetProps) {
+export function SpinePet({ skinId = 'firefly' }: SpinePetProps) {
   const { mood } = usePet()
-  const containerRef = useRef<HTMLDivElement>(null)
+  const outerRef = useRef<HTMLDivElement>(null)
+  const canvasContainerRef = useRef<HTMLDivElement>(null)
   const appRef = useRef<PIXI.Application | null>(null)
   const spineRef = useRef<Spine | null>(null)
   const [isDragging, setIsDragging] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const prevSkinRef = useRef(skinId)
 
-  /** 将窗口裁剪到贴合精灵 */
-  const fitWindowToSpine = useCallback(async (spine: Spine) => {
-    try {
-      // 触发一帧更新让 bounds 可用
-      spine.update(0)
-      const bounds = spine.getBounds()
-
-      const w = Math.max(Math.ceil(bounds.width + PADDING), MIN_WIN)
-      const h = Math.max(Math.ceil(bounds.height + PADDING), MIN_WIN)
-
-      // 调整 Canvas 大小
-      const app = appRef.current
-      if (app) {
-        app.renderer.resize(w, h)
-      }
-
-      // 重定位精灵到居中
-      spine.x = -bounds.x + PADDING / 2
-      spine.y = -bounds.y + PADDING / 2
-
-      // 调整 Tauri 窗口大小
-      const window = getCurrentWindow()
-      await window.setSize(new LogicalSize(w, h))
-
-      // 同步容器大小
-      if (containerRef.current) {
-        containerRef.current.style.width = `${w}px`
-        containerRef.current.style.height = `${h}px`
-      }
-    } catch (e) {
-      console.warn('[SpinePet] Bounds fit failed, using skeleton data:', e)
-    }
-  }, [])
-
-  /** 鼠标按下 - 开始拖动 */
-  const handleMouseDown = useCallback(async (e: React.MouseEvent) => {
-    if (e.button !== 0) return
-    setIsDragging(true)
-    try {
-      const window = getCurrentWindow()
-      await window.startDragging()
-    } catch (err) {
-      console.error('拖动失败:', err)
-    } finally {
-      setIsDragging(false)
-    }
-  }, [])
-
-  /** 销毁 PIXI 应用并清理 */
-  const destroyApp = useCallback(() => {
+  /** 销毁 PIXI 实例 */
+  const destroy = useCallback(() => {
     if (appRef.current) {
       appRef.current.destroy(true, { children: true, texture: true, baseTexture: true })
       appRef.current = null
       spineRef.current = null
     }
-    if (containerRef.current) {
-      containerRef.current.innerHTML = ''
+    if (canvasContainerRef.current) {
+      canvasContainerRef.current.innerHTML = ''
     }
   }, [])
 
-  /** 初始化或切换皮肤时重新创建 PIXI + Spine */
+  /** 鼠标按下拖动 */
+  const handleMouseDown = useCallback(async (e: React.MouseEvent) => {
+    if (e.button !== 0) return
+    setIsDragging(true)
+    try { await getCurrentWindow().startDragging() }
+    catch (err) { console.error('[SpinePet] drag:', err) }
+    finally { setIsDragging(false) }
+  }, [])
+
+  // ==================== 初始化 PIXI + Spine ====================
   useEffect(() => {
-    if (!containerRef.current) return
+    const canvasCtn = canvasContainerRef.current
+    if (!canvasCtn) return
     let destroyed = false
-    const container = containerRef.current
 
     const init = async () => {
+      setLoadError(null)
       setIsLoading(true)
-      destroyApp()
+      destroy()
 
       try {
+        log('初始化开始, skinId:', skinId)
+
+        // 创建 PIXI Application（使用实际窗口尺寸）
+        const winW = window.innerWidth
+        const winH = window.innerHeight
         const app = new PIXI.Application({
-          width: MIN_WIN,
-          height: MIN_WIN,
+          width: winW,
+          height: winH,
           backgroundAlpha: 0,
           antialias: true,
           resolution: window.devicePixelRatio || 1,
           autoDensity: true,
-          forceCanvas: true,
         })
 
         if (destroyed) { app.destroy(true); return }
 
-        container.appendChild(app.view as HTMLCanvasElement)
+        canvasCtn.appendChild(app.view as HTMLCanvasElement)
         appRef.current = app
+        log('PIXI Application 创建成功')
 
-        // 动态加载皮肤资产
-        const basePath = `/spines/${skinId}`
+        // 加载 Spine 资产
+        const base = `/spines/${skinId}`
+        log('加载资源路径:', base)
 
-        const [atlasResponse, textureResponse] = await Promise.all([
-          fetch(`${basePath}/atlases_0_atlas_0`),
+        const [atlasRes, texImg, skelRes] = await Promise.all([
+          fetch(`${base}/atlases_0_atlas_0`),
           new Promise<HTMLImageElement>((resolve, reject) => {
             const img = new Image()
-            img.onload = () => resolve(img)
-            img.onerror = reject
-            img.src = `${basePath}/atlases_0_textures_0_0.png`
+            img.onload = () => {
+              log('纹理图片加载成功:', img.width, 'x', img.height)
+              resolve(img)
+            }
+            img.onerror = (e) => {
+              log('纹理图片加载失败:', e)
+              reject(new Error('纹理图片加载失败'))
+            }
+            img.src = `${base}/atlases_0_textures_0_0.png`
           }),
+          fetch(`${base}/skeleton_0`),
         ])
 
         if (destroyed || !app.stage) { app.destroy(true); return }
-        if (!atlasResponse.ok) throw new Error(`加载图集失败: ${atlasResponse.status}`)
-        const atlasText = await atlasResponse.text()
+        if (!atlasRes.ok) throw new Error(`图集 HTTP ${atlasRes.status}`)
+        if (!skelRes.ok) throw new Error(`骨架 HTTP ${skelRes.status}`)
 
-        const skeletonResponse = await fetch(`${basePath}/skeleton_0`)
-        if (!skeletonResponse.ok) throw new Error(`加载骨架失败: ${skeletonResponse.status}`)
-        const skeletonBuffer = await skeletonResponse.arrayBuffer()
+        const atlasText = await atlasRes.text()
+        const skelBuf = await skelRes.arrayBuffer()
+        log('Atlas 文本长度:', atlasText.length)
+        log('骨架数据大小:', skelBuf.byteLength, 'bytes')
+
+        // 解析图集
+        log('开始解析图集...')
+        const atlas = new TextureAtlas(atlasText, (path: string, cb: (tex: PIXI.BaseTexture) => void) => {
+          log('Atlas 请求纹理路径:', path)
+          // 创建纹理
+          const texture = PIXI.Texture.from(texImg)
+          log('Texture.from 创建成功, width:', texture.width, 'height:', texture.height)
+          if (texture.baseTexture) {
+            log('BaseTexture 已存在, width:', texture.baseTexture.width, 'height:', texture.baseTexture.height)
+            cb(texture.baseTexture)
+          } else {
+            log('BaseTexture 不存在，创建新的')
+            const baseTexture = new PIXI.BaseTexture(texImg)
+            cb(baseTexture)
+          }
+        })
+        log('TextureAtlas 解析成功, regions:', atlas.regions.length)
+
+        // 检查 atlas 是否有 region
+        if (atlas.regions.length === 0) {
+          log('警告: atlas 没有 regions!')
+        } else {
+          log('第一个 region:', atlas.regions[0].name, 'x:', atlas.regions[0].x, 'y:', atlas.regions[0].y)
+        }
+
+        const atlLoader = new AtlasAttachmentLoader(atlas)
+        const skelLoader = new SkeletonBinary(atlLoader)
+        const skelData = skelLoader.readSkeletonData(new Uint8Array(skelBuf))
+        log('骨架数据解析成功, animations:', skelData.animations.length, 'bones:', skelData.bones.length, 'skins:', skelData.skins.length)
 
         if (destroyed || !app.stage) { app.destroy(true); return }
 
-        // 创建 Spine 资源
-        const atlas = new TextureAtlas(atlasText, (_path: string, loaderFunction: (tex: PIXI.BaseTexture) => void) => {
-          loaderFunction(new PIXI.BaseTexture(textureResponse))
-        })
-        const atlasLoader = new AtlasAttachmentLoader(atlas)
-        const skeletonLoader = new SkeletonBinary(atlasLoader)
-        const skeletonData = skeletonLoader.readSkeletonData(new Uint8Array(skeletonBuffer))
+        // 创建 Spine 对象，先放原点计算 bounds
+        const spine = new Spine(skelData)
+        spine.scale.set(MODEL_SCALE)
+        spine.x = 0
+        spine.y = 0
 
-        // 创建 Spine 对象
-        const spine = new Spine(skeletonData)
-        spine.scale.set(1.0)
-        spine.x = MIN_WIN / 2
-        spine.y = MIN_WIN * 0.85
+        // 设置渲染属性
+        spine.tint = 0xFFFFFF
+        spine.blendMode = PIXI.BLEND_MODES.NORMAL
 
-        // 播放初始动画
+        // 添加到 stage 并更新
+        app.stage.addChild(spine)
+        spine.update(0)
+
+        // 按 PET_SIZE 等比缩放
+        const bounds = spine.getBounds()
+        log('Spine 初始 bounds:', bounds.x, bounds.y, bounds.width, bounds.height)
+        const fitScale = Math.min(PET_SIZE / bounds.width, PET_SIZE / bounds.height)
+        spine.scale.set(MODEL_SCALE * fitScale)
+        spine.update(0)
+
+        // 居中：用 pivot 方式精确定位
+        const newBounds = spine.getBounds()
+        spine.x = winW / 2 - (newBounds.x + newBounds.width / 2)
+        spine.y = winH / 2 - (newBounds.y + newBounds.height / 2)
+
+        log('Spine 缩放居中完成, fitScale:', fitScale.toFixed(3), '尺寸:', newBounds.width.toFixed(0), 'x', newBounds.height.toFixed(0), 'pos:', spine.x.toFixed(0), spine.y.toFixed(0))
+
+        // Track 0: 身体待机动画
+        if (skelData.findAnimation(BODY_IDLE)) {
+          spine.state.setAnimation(0, BODY_IDLE, true)
+          log('设置身体动画:', BODY_IDLE)
+        } else if (skelData.animations.length > 0) {
+          console.warn('[SpinePet]', BODY_IDLE, 'not found, using', skelData.animations[0].name)
+          spine.state.setAnimation(0, skelData.animations[0].name, true)
+        } else {
+          console.warn('[SpinePet] no animations found')
+        }
+
+        // Track 1: 面部表情
         const initialMood = mood ?? 'happy'
         const faceAnim = MOOD_FACE_MAP[initialMood]
-
-        if (skeletonData.findAnimation(BODY_IDLE)) {
-          spine.state.setAnimation(0, BODY_IDLE, true)
-        } else if (skeletonData.animations.length > 0) {
-          spine.state.setAnimation(0, skeletonData.animations[0].name, true)
-        }
-        if (faceAnim && skeletonData.findAnimation(faceAnim)) {
+        if (faceAnim && skelData.findAnimation(faceAnim)) {
           spine.state.setAnimation(1, faceAnim, true)
+          log('设置面部动画:', faceAnim)
         }
 
-        if (!destroyed && app.stage) {
-          // 点击宠物触发聊天气泡
-          spine.eventMode = 'static'
-          spine.cursor = 'pointer'
-          spine.on('pointerdown', () => {
-            onPetClick?.()
-          })
+        // 交互（拖动）
+        spine.eventMode = 'static'
+        spine.cursor = 'grab'
 
-          app.stage.addChild(spine)
-          spineRef.current = spine
+        spineRef.current = spine
+        setIsLoading(false)
+        log('Spine 添加到 stage, children:', app.stage.children.length)
 
-          // 等一帧渲染后再裁剪窗口到角色大小
-          requestAnimationFrame(() => {
-            fitWindowToSpine(spine)
-          })
-
-          setIsLoading(false)
+        // 启动渲染循环（关键！）
+        const tickCallback = () => {
+          if (spineRef.current && appRef.current) {
+            spineRef.current.update(0)
+          }
         }
+        app.ticker.add(tickCallback)
+        log('PIXI ticker 启动')
+
       } catch (e) {
         if (!destroyed) {
           const msg = e instanceof Error ? e.message : String(e)
           console.error('[SpinePet] 初始化失败:', msg)
+          setLoadError(msg)
           setIsLoading(false)
-
-          const errDiv = document.createElement('div')
-          errDiv.style.cssText =
-            'position:absolute;top:10px;left:10px;color:red;font-size:12px;max-width:280px;word-break:break-all;background:rgba(0,0,0,0.5);padding:5px;'
-          errDiv.textContent = `Error: ${msg}`
-          container.appendChild(errDiv)
         }
       }
     }
 
-    // 如果皮肤已变化，先淡出再重新初始化
+    // 皮肤切换先淡出再重载
     if (prevSkinRef.current !== skinId) {
       prevSkinRef.current = skinId
-      if (container) {
-        container.style.opacity = '0'
-        setTimeout(init, FADE_DURATION)
-      }
+      if (outerRef.current) outerRef.current.style.opacity = '0'
+      setTimeout(init, 200)
     } else {
       init()
     }
 
-    return () => {
-      destroyed = true
-    }
-  }, [skinId]) // eslint-disable-line react-hooks/exhaustive-deps
+    return () => { destroyed = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [skinId])
 
-  // ==================== mood 驱动动画切换 ====================
+  // ==================== mood 驱动面部动画和身体动作 ====================
   useEffect(() => {
     const spine = spineRef.current
     if (!spine?.skeleton?.data) return
 
-    const skeletonData = spine.skeleton.data
-    const faceAnim = MOOD_FACE_MAP[mood ?? 'happy']
+    const currentMood = mood ?? 'happy'
 
-    // Track 0：身体动画
-    if (skeletonData.findAnimation(BODY_IDLE)) {
-      const t0 = spine.state.setAnimation(0, BODY_IDLE, true)
-      t0.mixDuration = 0.3
+    // Track 1: 面部表情
+    const faceAnim = MOOD_FACE_MAP[currentMood]
+    if (spine.skeleton.data.findAnimation(faceAnim)) {
+      spine.state.setAnimation(1, faceAnim, true)
+      log('设置面部动画:', faceAnim)
     }
 
-    // Track 1：面部表情
-    if (faceAnim && skeletonData.findAnimation(faceAnim)) {
-      const t1 = spine.state.setAnimation(1, faceAnim, true)
-      t1.mixDuration = 0.3
+    // Track 2: 身体动作（可选）
+    const bodyAnim = MOOD_BODY_MAP[currentMood]
+    if (bodyAnim && spine.skeleton.data.findAnimation(bodyAnim)) {
+      spine.state.setAnimation(2, bodyAnim, false) // 不循环，播放一次
+      log('设置身体动作:', bodyAnim)
     }
   }, [mood])
 
-  // ==================== 皮肤加载完成后淡入 ====================
+  // ==================== 加载完成后淡入 ====================
   useEffect(() => {
-    if (!isLoading && containerRef.current) {
-      containerRef.current.style.transition = `opacity ${FADE_DURATION}ms ease`
-      containerRef.current.style.opacity = '1'
+    if (!isLoading && outerRef.current) {
+      outerRef.current.style.transition = 'opacity 200ms ease'
+      outerRef.current.style.opacity = '1'
     }
   }, [isLoading])
 
   return (
     <>
-      <style>{`
-        .spine-pet-container:hover .pet-close-btn {
-          opacity: 1 !important;
-        }
-      `}</style>
       <div
         className="spine-pet-container"
-        ref={containerRef}
+        ref={outerRef}
         style={{
           position: 'relative',
+          width: '100vw',
+          height: '100vh',
           cursor: isDragging ? 'grabbing' : 'grab',
           userSelect: 'none',
           WebkitUserSelect: 'none',
           opacity: 1,
-          transition: `opacity ${FADE_DURATION}ms ease`,
         }}
         onMouseDown={handleMouseDown}
       >
-        {/* 加载指示器 */}
-        {isLoading && (
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'rgba(0,0,0,0.1)',
-              borderRadius: 8,
-              zIndex: 10,
-            }}
-          >
-            <div
-              style={{
-                width: 24,
-                height: 24,
-                border: '3px solid rgba(255,255,255,0.3)',
-                borderTopColor: '#fff',
-                borderRadius: '50%',
-                animation: 'spin 0.8s linear infinite',
-              }}
-            />
+        {/* PIXI Canvas */}
+        <div ref={canvasContainerRef} style={{ position: 'absolute', inset: 0, zIndex: 1 }} />
+
+        {/* 加载中 */}
+        {isLoading && !loadError && (
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 10,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(0,0,0,0.1)', borderRadius: 8,
+          }}>
+            <div style={{
+              width: 24, height: 24,
+              border: '3px solid rgba(255,255,255,0.3)',
+              borderTopColor: '#fff',
+              borderRadius: '50%',
+              animation: 'spin 0.8s linear infinite',
+            }} />
             <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
           </div>
         )}
 
-        {/* 关闭按钮 */}
-        <button
-          onClick={async (e) => {
-            e.stopPropagation()
-            if (window.confirm('确定退出番茄猫？')) {
-              try {
-                await invoke('exit_app')
-              } catch (err) {
-                console.error('退出失败:', err)
-              }
-            }
-          }}
-          style={{
-            position: 'absolute',
-            top: 4,
-            left: 4,
-            width: 20,
-            height: 20,
-            borderRadius: '50%',
-            border: 'none',
-            background: 'rgba(0,0,0,0.3)',
-            color: 'rgba(255,255,255,0.6)',
-            fontSize: 12,
-            lineHeight: '20px',
-            textAlign: 'center',
-            cursor: 'pointer',
-            zIndex: 20,
-            opacity: 0,
-            transition: 'opacity 0.2s',
-            padding: 0,
-          }}
-          className="pet-close-btn"
-          onMouseEnter={(e) => {
-            ;(e.target as HTMLElement).style.background = 'rgba(255,0,0,0.6)'
-            ;(e.target as HTMLElement).style.color = 'white'
-          }}
-          onMouseLeave={(e) => {
-            ;(e.target as HTMLElement).style.background = 'rgba(0,0,0,0.3)'
-            ;(e.target as HTMLElement).style.color = 'rgba(255,255,255,0.6)'
-          }}
-        >
-          ×
-        </button>
+        {/* 错误提示（隐藏文字，只在控制台输出） */}
+        {loadError && (
+          <div style={{
+            position: 'absolute', top: 4, right: 4, zIndex: 10,
+            width: 12, height: 12, borderRadius: '50%',
+            background: '#ff6b6b',
+            opacity: 0.8,
+          }} />
+        )}
       </div>
     </>
   )
