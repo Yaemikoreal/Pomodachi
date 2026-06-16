@@ -1,4 +1,5 @@
 pub mod ai;
+pub mod claude_monitor;
 pub mod db;
 mod monitor;
 mod notification;
@@ -7,12 +8,13 @@ pub mod task;
 pub mod timer;
 
 use ai::AiClient;
+use claude_monitor::ClaudeCodeMonitor;
 use db::{Achievement, AiConfig, BlocklistItem, ChatMessage, Database, FocusStats, PomodoroRecord, Task};
 use monitor::{DistractionEvent, ProcessMonitor};
 use pet::PetManager;
 use std::sync::Arc;
 use tauri::{Emitter, Listener, Manager};
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{Menu, MenuItem, Submenu};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use task::TaskManager;
 use timer::{PomodoroTimer, TimerMode, TimerState};
@@ -21,10 +23,11 @@ use timer::{PomodoroTimer, TimerMode, TimerState};
 pub struct AppState {
     pub db: Arc<Database>,
     pub timer: PomodoroTimer,
-    pub pet_manager: PetManager,
+    pub pet_manager: Arc<PetManager>,
     pub task_manager: TaskManager,
     pub process_monitor: ProcessMonitor,
     pub ai_client: AiClient,
+    pub claude_monitor: ClaudeCodeMonitor,
 }
 
 // ==================== 计时器命令 ====================
@@ -131,6 +134,33 @@ async fn set_pet_skin(
     state.db.set_skin_id(&skin_id).map_err(|e| e.to_string())?;
     // 通知前端皮肤已变更
     let _ = app.emit("pet-skin-changed", &skin_id);
+    Ok(())
+}
+
+/// 获取 Claude Code 状态（前端点击宠物时显示详情）
+#[tauri::command]
+async fn get_claude_code_status() -> Result<claude_monitor::ClaudeCodeStatus, String> {
+    Ok(claude_monitor::ClaudeCodeMonitor::detect_claude_code())
+}
+
+/// 手动覆盖宠物情绪（duration_secs 秒后自动恢复，默认 300 秒）
+#[tauri::command]
+async fn set_pet_mood_override(
+    state: tauri::State<'_, AppState>,
+    mood: String,
+    duration_secs: Option<u64>,
+) -> Result<(), String> {
+    state
+        .pet_manager
+        .set_mood_with_override(&mood, duration_secs.unwrap_or(300))
+        .await;
+    Ok(())
+}
+
+/// 清除手动覆盖，恢复自动模式
+#[tauri::command]
+async fn clear_pet_mood_override(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    state.pet_manager.clear_override().await;
     Ok(())
 }
 
@@ -429,10 +459,11 @@ pub fn run() {
             // 初始化计时器
             let timer = PomodoroTimer::new(app.handle().clone());
 
-            // 初始化宠物管理器
-            // 从数据库加载皮肤 ID
+            // 初始化宠物管理器（持有 AppHandle，情绪变化时自动通知前端）
+            let pet_manager = Arc::new(PetManager::new_with_handle(app.handle().clone()));
+            // 从数据库恢复皮肤 ID（setup 是同步闭包，用 block_on 处理异步调用）
             let skin_id = db.get_skin_id().unwrap_or_else(|_| "firefly".to_string());
-            let pet_manager = PetManager::new_with_skin(&skin_id);
+            tauri::async_runtime::block_on(pet_manager.set_skin_id(&skin_id));
 
             // 初始化任务管理器
             let task_manager = TaskManager::new(db.clone());
@@ -444,6 +475,11 @@ pub fn run() {
             let ai_config = db.get_ai_config().expect("获取 AI 配置失败");
             let ai_client = AiClient::new(ai_config);
 
+            // 初始化 Claude Code 进程监控器
+            let claude_monitor = ClaudeCodeMonitor::new(app.handle().clone(), pet_manager.clone());
+            // 启动 Claude Code 监控
+            tauri::async_runtime::block_on(claude_monitor.start()).expect("启动 Claude Code 监控失败");
+
             // 注册应用状态
             app.manage(AppState {
                 db: db.clone(),
@@ -452,6 +488,7 @@ pub fn run() {
                 task_manager,
                 process_monitor,
                 ai_client,
+                claude_monitor,
             });
 
             // ==================== 事件监听器 ====================
@@ -516,8 +553,30 @@ pub fn run() {
             // 创建托盘菜单
             let show_item = MenuItem::with_id(app, "show", "显示宠物", true, None::<&str>)?;
             let today_item = MenuItem::with_id(app, "today", "今日专注：0 个", false, None::<&str>)?;
+
+            // 情绪手动覆盖子菜单（5 分钟后自动恢复）
+            let mood_auto = MenuItem::with_id(app, "mood_auto", "自动（跟随 Claude Code）", true, None::<&str>)?;
+            let mood_happy = MenuItem::with_id(app, "mood_happy", "开心", true, None::<&str>)?;
+            let mood_focused = MenuItem::with_id(app, "mood_focused", "专注", true, None::<&str>)?;
+            let mood_thinking = MenuItem::with_id(app, "mood_thinking", "认真工作中", true, None::<&str>)?;
+            let mood_tired = MenuItem::with_id(app, "mood_tired", "疲惫", true, None::<&str>)?;
+            let mood_sleeping = MenuItem::with_id(app, "mood_sleeping", "打盹", true, None::<&str>)?;
+            let mood_submenu = Submenu::with_items(
+                app,
+                "设置情绪",
+                true,
+                &[
+                    &mood_auto,
+                    &mood_happy,
+                    &mood_focused,
+                    &mood_thinking,
+                    &mood_tired,
+                    &mood_sleeping,
+                ],
+            )?;
+
             let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_item, &today_item, &quit_item])?;
+            let menu = Menu::with_items(app, &[&show_item, &today_item, &mood_submenu, &quit_item])?;
 
             // 构建托盘图标
             TrayIconBuilder::new()
@@ -525,7 +584,8 @@ pub fn run() {
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| {
-                    match event.id().as_ref() {
+                    let id = event.id().as_ref().to_string();
+                    match id.as_str() {
                         "show" => {
                             if let Some(window) = app.get_webview_window("pet") {
                                 let _ = window.show();
@@ -534,6 +594,41 @@ pub fn run() {
                         }
                         "quit" => {
                             app.exit(0);
+                        }
+                        // 情绪手动覆盖（5 分钟后自动恢复）
+                        "mood_auto" | "mood_happy" | "mood_focused" | "mood_thinking" | "mood_tired" | "mood_sleeping" => {
+                            let handle = app.clone();
+                            let mood_id = id.clone();
+                            tauri::async_runtime::spawn(async move {
+                                let state = handle.state::<AppState>();
+                                match mood_id.as_str() {
+                                    "mood_auto" => {
+                                        state.pet_manager.clear_override().await;
+                                        println!("[情绪覆盖] 已恢复自动模式");
+                                    }
+                                    "mood_happy" => {
+                                        state.pet_manager.set_mood_with_override("happy", 300).await;
+                                        println!("[情绪覆盖] 设置为开心（5 分钟）");
+                                    }
+                                    "mood_focused" => {
+                                        state.pet_manager.set_mood_with_override("focused", 300).await;
+                                        println!("[情绪覆盖] 设置为专注（5 分钟）");
+                                    }
+                                    "mood_thinking" => {
+                                        state.pet_manager.set_mood_with_override("thinking", 300).await;
+                                        println!("[情绪覆盖] 设置为认真工作中（5 分钟）");
+                                    }
+                                    "mood_tired" => {
+                                        state.pet_manager.set_mood_with_override("tired", 300).await;
+                                        println!("[情绪覆盖] 设置为疲惫（5 分钟）");
+                                    }
+                                    "mood_sleeping" => {
+                                        state.pet_manager.set_mood_with_override("sleeping", 300).await;
+                                        println!("[情绪覆盖] 设置为打盹（5 分钟）");
+                                    }
+                                    _ => {}
+                                }
+                            });
                         }
                         _ => {}
                     }
@@ -572,6 +667,9 @@ pub fn run() {
             set_pet_mood,
             get_pet_skin,
             set_pet_skin,
+            get_claude_code_status,
+            set_pet_mood_override,
+            clear_pet_mood_override,
             // 专注记录
             add_pomodoro_record,
             complete_pomodoro_record,

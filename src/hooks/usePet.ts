@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 
 /** 宠物情绪状态，参考 agent-pet 的 messageMap 设计 */
 export type PetMood =
@@ -18,7 +19,7 @@ export function usePet() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // 获取宠物情绪
+  // 获取宠物情绪（初始拉取）
   const fetchMood = useCallback(async () => {
     try {
       const currentMood = await invoke<string>('get_pet_mood');
@@ -32,9 +33,18 @@ export function usePet() {
     }
   }, []);
 
-  // 初始化
+  // 初始化 + 监听后端情绪变化事件
   useEffect(() => {
     fetchMood();
+
+    // 监听 Rust 后端 emit 的 pet-mood-changed 事件
+    const unlisten = listen<string>('pet-mood-changed', (event) => {
+      setMood(event.payload as PetMood);
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, [fetchMood]);
 
   return {

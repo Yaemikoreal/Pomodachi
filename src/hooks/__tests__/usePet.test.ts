@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { usePet } from '../usePet';
-import { __setInvokeMock, __resetMocks } from '../../test-utils/mockTauri';
+import { __setInvokeMock, __emitEvent, __resetMocks } from '../../test-utils/mockTauri';
 
 describe('usePet', () => {
   beforeEach(() => {
@@ -65,6 +65,44 @@ describe('usePet', () => {
     // 修改 mock 返回值并刷新
     __setInvokeMock('get_pet_mood', () => 'tired');
     result.current.refresh();
+
+    await waitFor(() => {
+      expect(result.current.mood).toBe('tired');
+    });
+  });
+
+  it('监听 pet-mood-changed 事件实时更新情绪', async () => {
+    __setInvokeMock('get_pet_mood', () => 'happy');
+
+    const { result } = renderHook(() => usePet());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.mood).toBe('happy');
+
+    // 模拟后端 emit pet-mood-changed 事件 → Thinking
+    __emitEvent('pet-mood-changed', 'thinking');
+
+    await waitFor(() => {
+      expect(result.current.mood).toBe('thinking');
+    });
+
+    // 模拟后端 emit pet-mood-changed 事件 → Happy（AI 回复完成）
+    __emitEvent('pet-mood-changed', 'happy');
+
+    await waitFor(() => {
+      expect(result.current.mood).toBe('happy');
+    });
+  });
+
+  it('监听 pet-mood-changed 事件：AI 失败变为 tired', async () => {
+    __setInvokeMock('get_pet_mood', () => 'happy');
+
+    const { result } = renderHook(() => usePet());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    // 模拟 AI 失败 → Tired
+    __emitEvent('pet-mood-changed', 'tired');
 
     await waitFor(() => {
       expect(result.current.mood).toBe('tired');
