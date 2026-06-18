@@ -1,8 +1,8 @@
-# CONTEXT.md — Toumato 术语表
+# CONTEXT.md — Pomodachi 术语表
 
 ## 核心概念
 
-### 番茄宠物 (Toumato)
+### 番茄宠物 (Pomodachi)
 基于 Tauri v2 的本地优先 AI 番茄钟桌面宠物/个人助理。专注时间具象化为宠物情绪反馈。
 
 ### Spine 宠物 (Spine Pet)

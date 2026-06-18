@@ -137,7 +137,7 @@
 ### 应用启动状态
 - ✅ Vite 开发服务器成功启动 (localhost:1420)
 - ✅ Tauri 应用编译成功
-- ✅ toumato-app.exe 进程运行正常 (PID: 5028)
+- ✅ pomodachi-app.exe 进程运行正常 (PID: 5028)
 - ✅ 应用窗口正常显示
 
 ### 功能验证

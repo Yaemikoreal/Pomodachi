@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-**Pomodoro Pet (番茄宠物 / Toumato)** — 基于 Tauri v2 的本地优先 AI 番茄钟桌面宠物/个人助理。
+**Pomodachi (番茄宠物)** — 基于 Tauri v2 的本地优先 AI 番茄钟桌面宠物/个人助理。
 
 核心理念：专注时间具象化为宠物情绪反馈。专注时宠物开心陪伴，摸鱼时宠物提醒，AI 作为"宠物灵魂"提供拟人化交互和任务管理。
 
@@ -111,7 +111,7 @@ pnpm build             # tsc + vite build（生产构建用 pnpm tauri build 替
 
 ## 数据库 (SQLite, 9 张表)
 
-`toumato.db` 存储在 Tauri app data 目录，通过 `Database` 结构体 (内部 `Mutex<Connection>`) 访问。
+`pomodachi.db` 存储在 Tauri app data 目录，通过 `Database` 结构体 (内部 `Mutex<Connection>`) 访问。
 
 | 表名 | 关键字段 | 用途 |
 |---|---|---|
@@ -261,7 +261,7 @@ Spine 骨骼动画素材在 `public/spines/firefly/`：
 ## 项目结构强调
 
 ```
-toumato/
+pomodachi/
 └── src/                        # React 前端
     ├── components/             # 7 个组件
     ├── hooks/                  # 8 个 Hook

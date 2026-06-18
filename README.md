@@ -1,4 +1,4 @@
-# Toumato - 番茄宠物
+# Pomodachi - 番茄宠物
 
 基于 Tauri v2 的本地优先 AI 番茄钟桌面宠物。专注时间具象化为宠物的情绪陪伴 -- 专注时宠物开心陪伴，摸鱼时宠物发出提醒。
 
@@ -30,8 +30,8 @@
 ### 安装与运行
 
 ```bash
-git clone https://github.com/Yaemikoreal/toumato.git
-cd toumato
+git clone https://github.com/Yaemikoreal/Pomodachi.git
+cd Pomodachi
 pnpm install
 pnpm tauri dev
 ```
@@ -72,7 +72,7 @@ pnpm tauri build
 ## 项目结构
 
 ```
-toumato/
+pomodachi/
 ├── src-tauri/              # Rust 后端 (Tauri)
 │   ├── src/
 │   │   ├── main.rs

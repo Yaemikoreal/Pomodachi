@@ -1,6 +1,6 @@
 # 🤝 贡献指南
 
-感谢你对番茄宠物 (Toumato) 项目的关注！我们欢迎各种形式的贡献。
+感谢你对番茄宠物 (Pomodachi) 项目的关注！我们欢迎各种形式的贡献。
 
 ## 📋 目录
 
@@ -28,7 +28,7 @@
 
 ### 不确定如何开始？
 
-查看标记为 [`good first issue`](https://github.com/Yaemikoreal/toumato/labels/good%20first%20issue) 的 Issue，这些是适合新贡献者的任务。
+查看标记为 [`good first issue`](https://github.com/Yaemikoreal/Pomodachi/labels/good%20first%20issue) 的 Issue，这些是适合新贡献者的任务。
 
 ## 开发流程
 
@@ -37,11 +37,11 @@
 ```bash
 # Fork 仓库到你的 GitHub 账号
 # 然后克隆你的 Fork
-git clone https://github.com/<你的用户名>/toumato.git
-cd toumato
+git clone https://github.com/<你的用户名>/Pomodachi.git
+cd Pomodachi
 
 # 添加上游仓库
-git remote add upstream https://github.com/Yaemikoreal/toumato.git
+git remote add upstream https://github.com/Yaemikoreal/Pomodachi.git
 ```
 
 ### 2. 创建分支
@@ -127,7 +127,7 @@ git push origin feature/你的功能名
 
 ### Bug 报告
 
-使用 [Bug Report](https://github.com/Yaemikoreal/toumato/issues/new?template=bug_report.md) 模板，包含：
+使用 [Bug Report](https://github.com/Yaemikoreal/Pomodachi/issues/new?template=bug_report.md) 模板，包含：
 
 - 清晰的标题
 - 复现步骤
@@ -137,7 +137,7 @@ git push origin feature/你的功能名
 
 ### 功能建议
 
-使用 [Feature Request](https://github.com/Yaemikoreal/toumato/issues/new?template=feature_request.md) 模板，包含：
+使用 [Feature Request](https://github.com/Yaemikoreal/Pomodachi/issues/new?template=feature_request.md) 模板，包含：
 
 - 功能描述
 - 使用场景
@@ -199,7 +199,7 @@ Closes #<issue 编号>
 ### 项目结构
 
 ```
-toumato/
+pomodachi/
 ├── src-tauri/      # Rust 后端
 ├── src/            # React 前端
 ├── public/         # 静态资源
@@ -208,7 +208,7 @@ toumato/
 
 ## 问题？
 
-如有任何问题，欢迎在 [Discussions](https://github.com/Yaemikoreal/toumato/discussions) 中提问！
+如有任何问题，欢迎在 [Discussions](https://github.com/Yaemikoreal/Pomodachi/discussions) 中提问！
 
 ---
 

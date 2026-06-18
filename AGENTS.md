@@ -3,7 +3,7 @@
 ## Project Structure & Module Organization
 
 ```
-toumato/
+pomodachi/
 ├── src/                  # React frontend (TypeScript)
 │   ├── components/       # 7 components: SpinePet, StatusPanel, Sidebar, ChatPanel, etc.
 │   ├── hooks/            # 8 hooks: useTimer, usePet, useChat, useTasks, usePomodoro, etc.

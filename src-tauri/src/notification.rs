@@ -7,7 +7,7 @@ use windows::Win32::UI::WindowsAndMessaging::{MB_OK, MB_SETFOREGROUND, MB_SYSTEM
 /// ```rust
 /// // TODO: WinRT Toast 通知方案（需 AppUserModelId 注册）
 /// // use windows::UI::Notifications::ToastNotificationManager;
-/// // let notifier = ToastNotificationManager::CreateToastNotifierWithId("com.toumato.app")?;
+/// // let notifier = ToastNotificationManager::CreateToastNotifierWithId("com.pomodachi.app")?;
 /// // notifier.Show(&notification)?;
 /// ```
 pub fn show_notification(title: &str, body: &str) -> Result<(), String> {

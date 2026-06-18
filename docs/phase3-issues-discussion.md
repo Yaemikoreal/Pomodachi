@@ -93,12 +93,12 @@ mood 只在特定事件触发时改变：
 
 **集成方案**：
 - OpenClaw Gateway 运行在 `localhost:18789`
-- toumato 的 Rust 后端通过 HTTP 请求调用 Gateway 的 agent API
+- pomodachi 的 Rust 后端通过 HTTP 请求调用 Gateway 的 agent API
 - 不再需要用户单独配置 API Key / Model / Endpoint —— OpenClaw 统一管理
 - `ai.rs` 简化为轻量的 OpenClaw 客户端
 
 **优势**：
-- 用户只需启动 OpenClaw，toumato 自动连接
+- 用户只需启动 OpenClaw，pomodachi 自动连接
 - 支持 OpenClaw 已配置的任意模型
 - 会话管理由 OpenClaw 处理
 - 后续可利用 OpenClaw 的 Skills 扩展能力

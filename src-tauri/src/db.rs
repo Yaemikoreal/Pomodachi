@@ -143,7 +143,7 @@ impl Database {
             .app_data_dir()
             .map_err(|e| rusqlite::Error::InvalidParameterName(format!("获取路径失败: {}", e)))?;
 
-        Ok(app_data_dir.join("toumato.db"))
+        Ok(app_data_dir.join("pomodachi.db"))
     }
 
     /// 初始化表结构

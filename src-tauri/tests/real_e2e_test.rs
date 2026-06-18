@@ -4,9 +4,9 @@
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use toumato_app_lib::db::Database;
-use toumato_app_lib::pet::PetManager;
-use toumato_app_lib::task::TaskManager;
+use pomodachi_app_lib::db::Database;
+use pomodachi_app_lib::pet::PetManager;
+use pomodachi_app_lib::task::TaskManager;
 
 /// 测试任务管理完整流程 - 真实调用
 #[tokio::test]
