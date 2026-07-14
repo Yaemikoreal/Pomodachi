@@ -1,0 +1,15 @@
+# 依赖
+node_modules/
+
+# 解包后的版权素材（用户自备，不要提交）
+素材/
+resources/avatar/
+public/avatar/
+demo/public/firefly/
+
+# 临时截图/测试产物
+demo/screenshot.png
+
+# Tauri / Rust 构建产物
+src-tauri/target/
+dist/

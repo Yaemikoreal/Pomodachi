@@ -1,0 +1,6 @@
+        Info Patching E:\Pythonproject\Pomodachi\src-tauri\target\release\tauri-app.exe with bundle type information: nsis
+        Info Target: x64
+     Running makensis to produce E:\Pythonproject\Pomodachi\src-tauri\target\release\bundle\nsis\Pomodachi_0.1.1_x64-setup.exe
+    Finished 1 bundle at:
+        E:\Pythonproject\Pomodachi\src-tauri\target\release\bundle\nsis\Pomodachi_0.1.1_x64-setup.exe
+
